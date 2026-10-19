@@ -8468,7 +8468,7 @@
         if (pillsContainer) {
           const appList = (LAB_APPARATUS_BY_SUBJECT.british[activeFilter] || LAB_APPARATUS_BY_SUBJECT.british.all);
           pillsContainer.innerHTML = appList.map(a => 
-            `<button type="button" class="apparatus-pill clickable-apparatus" onclick="useApparatus('${a.name.replace(/'/g, "\\'")}', '${a.precision.replace(/'/g, "\\'")}')" title="Click to calibrate and use ${a.name} on the workbench">
+            `<button type="button" class="apparatus-pill clickable-apparatus" data-name="${encodeURIComponent(a.name)}" data-precision="${encodeURIComponent(a.precision)}" onclick="useApparatus(decodeURIComponent(this.dataset.name), decodeURIComponent(this.dataset.precision))" title="Click to calibrate and use ${a.name} on the workbench">
               <span>${a.icon}</span> <span>${a.name}</span> <small style="opacity: 0.75; font-size: 10px;">(${a.precision})</small>
             </button>`
           ).join('');
@@ -8492,7 +8492,7 @@
         if (pillsContainer) {
           const appList = (LAB_APPARATUS_BY_SUBJECT.cbe[activeFilter] || LAB_APPARATUS_BY_SUBJECT.cbe.all);
           pillsContainer.innerHTML = appList.map(a => 
-            `<button type="button" class="apparatus-pill clickable-apparatus" onclick="useApparatus('${a.name.replace(/'/g, "\\'")}', '${a.precision.replace(/'/g, "\\'")}')" title="Click to use ${a.name} on the workbench">
+            `<button type="button" class="apparatus-pill clickable-apparatus" data-name="${encodeURIComponent(a.name)}" data-precision="${encodeURIComponent(a.precision)}" onclick="useApparatus(decodeURIComponent(this.dataset.name), decodeURIComponent(this.dataset.precision))" title="Click to use ${a.name} on the workbench">
               <span>${a.icon}</span> <span>${a.name}</span> <small style="opacity: 0.75; font-size: 10px;">(${a.precision})</small>
             </button>`
           ).join('');
@@ -11002,7 +11002,7 @@
         inputHtml = `
           <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
             ${opts.map((opt, oIdx) => `
-              <button type="button" class="mission-opt-btn" onclick="submitMissionAnswer('${opt.replace(/'/g, "\\'")}')">
+              <button type="button" class="mission-opt-btn" data-answer="${encodeURIComponent(opt)}" onclick="submitMissionAnswer(decodeURIComponent(this.dataset.answer))">
                 <strong>${String.fromCharCode(65 + oIdx)}.</strong> ${opt}
               </button>
             `).join('')}
@@ -11252,7 +11252,7 @@
         listEl.innerHTML = students.map(s => {
           const isCurrent = activeStudent && activeStudent.id === s.id;
           return `
-            <div class="learner-item ${isCurrent ? 'active' : ''}" onclick="selectLearnerToUnlock('${s.id}', '${s.handle}', '${s.avatar}')">
+            <div class="learner-item ${isCurrent ? 'active' : ''}" data-id="${s.id}" data-handle="${encodeURIComponent(s.handle)}" data-avatar="${s.avatar || '🦁'}" onclick="selectLearnerToUnlock(this.dataset.id, decodeURIComponent(this.dataset.handle), this.dataset.avatar)">
               <span style="font-size: 1.6rem;">${s.avatar || '🦁'}</span>
               <div style="flex: 1; text-align: left;">
                 <div style="font-weight: 700; color: #0F172A; font-size: 0.98rem;">${s.handle} ${isCurrent ? '<span style="color:#2E7D32; font-size:0.78rem; font-weight:800;">(Active)</span>' : ''}</div>
@@ -12943,6 +12943,7 @@
 
     async function finishCustomization() {
       if (!activeStudent) return;
+      const isBri = isBritishStudent(activeStudent);
 
       const handleInput = document.getElementById('customHandleInput');
       const countySelect = document.getElementById('customCountySelect');
@@ -13014,12 +13015,12 @@
             points: 10,
             message: 'Your grade and subjects are now synced.'
           });
-        } else if (data.error) {
-          alert(data.error);
+        } else {
+          alert(data.error || 'Could not save changes. Please try again.');
         }
       } catch (e) {
         console.warn('Profile update error:', e);
-        alert('Could not save changes. Please try again.');
+        alert(e.message || 'Could not save changes. Please try again.');
       }
     }
 
@@ -13899,7 +13900,7 @@
           : `Grade ${s.grade || 8} • ${s.school || 'Kenyan CBE School'}`;
         const safeStudentJson = encodeURIComponent(JSON.stringify(s));
         return `
-          <button type="button" class="figma-btn-ghost" onclick="selectLearnerFromModal('${safeStudentJson}')" style="width: 100%; text-align: left; padding: 14px 16px; border: 1.5px solid #E2E8F0; border-radius: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; background: #FFFFFF; cursor: pointer; transition: all 0.2s;">
+          <button type="button" class="figma-btn-ghost" data-student="${safeStudentJson}" onclick="selectLearnerFromModal(this.dataset.student)" style="width: 100%; text-align: left; padding: 14px 16px; border: 1.5px solid #E2E8F0; border-radius: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; background: #FFFFFF; cursor: pointer; transition: all 0.2s;">
             <span style="font-size: 32px; line-height: 1;">${s.avatar || '🦁'}</span>
             <div style="flex: 1;">
               <div style="font-size: 16px; font-weight: 700; color: #0D3A26;">${s.handle}</div>

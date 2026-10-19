@@ -4402,7 +4402,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
                   Checkpoint
                 </span>
               \` : '')}
-              <button type="button" onclick="openTeacherSubjectModal('\${sid}')" class="btn-primary" style="background: var(--bg-cream); color: var(--primary); border: 1px solid var(--border-warm); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto; cursor: pointer; font-weight: 600;">
+              <button type="button" data-sid="\${sid}" onclick="openTeacherSubjectModal(this.dataset.sid)" class="btn-primary" style="background: var(--bg-cream); color: var(--primary); border: 1px solid var(--border-warm); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto; cursor: pointer; font-weight: 600;">
                 📚 Subjects
               </button>
               <a href="/api/reports/student-summary?studentId=\${sid}&format=print&token=\${tok}" target="_blank" class="btn-primary" style="background: var(--slate-100); color: var(--slate-800); border: 1px solid var(--slate-300); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
@@ -4506,7 +4506,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
             <span>Items: \${m.itemsCount}</span>
           </div>
           <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
-            <button type="button" class="btn-primary" style="padding: 6px 14px; font-size: 12.5px; width: auto;" onclick="inspectProcessTrails('\${m.id}')">
+            <button type="button" class="btn-primary" style="padding: 6px 14px; font-size: 12.5px; width: auto;" data-mid="\${m.id}" onclick="inspectProcessTrails(this.dataset.mid)">
               🔍 Inspect Process Trails
             </button>
             <a href="/api/reports/stream-summary?schoolId=\${activeTeacher ? activeTeacher.schoolId : ''}&grade=\${m.grade}&stream=\${encodeURIComponent(m.stream)}&subject=\${encodeURIComponent(m.subject)}&format=csv&token=\${encodeURIComponent(getTeacherToken())}" target="_blank" class="btn-primary" style="background: var(--slate-700); text-decoration: none; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
@@ -5195,7 +5195,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
           '<span style="font-size: 13px; font-weight: 600; color: var(--primary);">' +
           'Grade ' + a.grade + ' Stream ' + a.stream + ' • ' + (a.subjects || []).join(', ') +
           '</span>' +
-          '<button type="button" onclick="removeAssignmentRow(' + idx + ')" style="background: none; border: none; color: #EF4444; font-size: 12px; font-weight: 700; cursor: pointer;">✕ Remove</button>' +
+          '<button type="button" data-idx="' + idx + '" onclick="removeAssignmentRow(Number(this.dataset.idx))" style="background: none; border: none; color: #EF4444; font-size: 12px; font-weight: 700; cursor: pointer;">✕ Remove</button>' +
           '</div>';
       }).join('');
     }

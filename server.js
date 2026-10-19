@@ -7117,12 +7117,12 @@ app.get('/parent/portal', (req, res) => {
                 '</div>' +
                 '<div style="margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">' +
                   (isFree
-                    ? '<button type="button" onclick="promptChildUpgrade(&apos;' + c.id + '&apos;)" style="background: #FFFFFF; color: #0D3A26; border: 1.5px solid #0D3A26; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;">Upgrade ' + c.handle + ' 🚀</button>' +
-                      '<button type="button" onclick="openChildUpgradeModal(&apos;' + c.id + '&apos;, &apos;' + c.handle + '&apos;, &apos;premium&apos;)" style="background: linear-gradient(135deg, #0D3A26, #1A5C3A); color: #FFFFFF; border: none; border-radius: 8px; padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(13,58,38,0.2);">Upgrade to ' + premPriceLabel + ' ✨</button>'
+                    ? '<button type="button" data-cid="' + c.id + '" onclick="promptChildUpgrade(this.dataset.cid)" style="background: #FFFFFF; color: #0D3A26; border: 1.5px solid #0D3A26; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;">Upgrade ' + c.handle + ' 🚀</button>' +
+                      '<button type="button" data-cid="' + c.id + '" data-cname="' + encodeURIComponent(c.handle) + '" data-tier="premium" onclick="openChildUpgradeModal(this.dataset.cid, decodeURIComponent(this.dataset.cname), this.dataset.tier)" style="background: linear-gradient(135deg, #0D3A26, #1A5C3A); color: #FFFFFF; border: none; border-radius: 8px; padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(13,58,38,0.2);">Upgrade to ' + premPriceLabel + ' ✨</button>'
                     : isStandard
-                      ? '<button type="button" onclick="openChildUpgradeModal(&apos;' + c.id + '&apos;, &apos;' + c.handle + '&apos;, &apos;premium&apos;)" style="background: linear-gradient(135deg, #0D3A26, #1A5C3A); color: #FFFFFF; border: none; border-radius: 8px; padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(13,58,38,0.2);">Upgrade to ' + premPriceLabel + ' ✨</button>' +
-                        '<a href="javascript:void(0)" onclick="openManagePlanModal(&apos;' + c.id + '&apos;, &apos;' + c.handle + '&apos;, &apos;standard&apos;, &apos;' + (kyc.daysActive || 0) + '&apos;)" style="font-size: 12px; color: #64748B; text-decoration: underline; cursor: pointer; padding: 6px 12px; border-radius: 6px; border: 1px solid #E2E8F0; background: #FFFFFF; font-weight: 500;">Manage Plan ⚙️</a>'
-                      : '<a href="javascript:void(0)" onclick="openManagePlanModal(&apos;' + c.id + '&apos;, &apos;' + c.handle + '&apos;, &apos;premium&apos;, &apos;' + (kyc.daysActive || 0) + '&apos;)" style="font-size: 12px; color: #64748B; text-decoration: underline; cursor: pointer; padding: 6px 12px; border-radius: 6px; border: 1px solid #E2E8F0; background: #FFFFFF; font-weight: 500;">Manage Subscription ⚙️</a>'
+                      ? '<button type="button" data-cid="' + c.id + '" data-cname="' + encodeURIComponent(c.handle) + '" data-tier="premium" onclick="openChildUpgradeModal(this.dataset.cid, decodeURIComponent(this.dataset.cname), this.dataset.tier)" style="background: linear-gradient(135deg, #0D3A26, #1A5C3A); color: #FFFFFF; border: none; border-radius: 8px; padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(13,58,38,0.2);">Upgrade to ' + premPriceLabel + ' ✨</button>' +
+                        '<a href="javascript:void(0)" data-cid="' + c.id + '" data-cname="' + encodeURIComponent(c.handle) + '" data-tier="standard" data-days="' + (kyc.daysActive || 0) + '" onclick="openManagePlanModal(this.dataset.cid, decodeURIComponent(this.dataset.cname), this.dataset.tier, this.dataset.days)" style="font-size: 12px; color: #64748B; text-decoration: underline; cursor: pointer; padding: 6px 12px; border-radius: 6px; border: 1px solid #E2E8F0; background: #FFFFFF; font-weight: 500;">Manage Plan ⚙️</a>'
+                      : '<a href="javascript:void(0)" data-cid="' + c.id + '" data-cname="' + encodeURIComponent(c.handle) + '" data-tier="premium" data-days="' + (kyc.daysActive || 0) + '" onclick="openManagePlanModal(this.dataset.cid, decodeURIComponent(this.dataset.cname), this.dataset.tier, this.dataset.days)" style="font-size: 12px; color: #64748B; text-decoration: underline; cursor: pointer; padding: 6px 12px; border-radius: 6px; border: 1px solid #E2E8F0; background: #FFFFFF; font-weight: 500;">Manage Subscription ⚙️</a>'
                   ) +
                 '</div>' +
               '</div>';
@@ -7144,7 +7144,7 @@ app.get('/parent/portal', (req, res) => {
                   '<div style="font-weight: 600; color: #1C1C1C; font-size: 14.5px;">' + p.handle + '</div>' +
                   '<div style="font-size: 12px; font-weight: 300; color: #9A9A9A;">Requested: ' + new Date(p.requestedAt).toLocaleDateString() + '</div>' +
                 '</div>' +
-                '<button type="button" onclick="approvePendingSibling(&apos;' + p.studentId + '&apos;, &apos;' + p.handle + '&apos;)" style="background: #0D3A26; color: #FFFFFF; border: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;">' +
+                '<button type="button" data-sid="' + p.studentId + '" data-handle="' + encodeURIComponent(p.handle) + '" onclick="approvePendingSibling(this.dataset.sid, decodeURIComponent(this.dataset.handle))" style="background: #0D3A26; color: #FFFFFF; border: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;">' +
                   'Approve Child 🚀' +
                 '</button>' +
               '</div>';
@@ -7976,7 +7976,7 @@ app.get('/parent/portal', (req, res) => {
                   'In live production, Safaricom prompts your phone for your PIN. Because no live Daraja credentials are set in .env, you are in <strong>Test / Sandbox Mode</strong>.' +
                 '</div>' +
                 '<div style="display: flex; gap: 8px;">' +
-                  '<button type="button" class="btn-portal-primary" style="height: 38px; font-size: 12px; flex: 1;" onclick="completeSimulatedMpesa(&apos;' + stkData.transactionRef + '&apos;)">' +
+                  '<button type="button" class="btn-portal-primary" style="height: 38px; font-size: 12px; flex: 1;" data-ref="' + stkData.transactionRef + '" onclick="completeSimulatedMpesa(this.dataset.ref)">' +
                     'Simulate Entering PIN & Pay ✓' +
                   '</button>' +
                   '<button type="button" style="height: 38px; font-size: 12px; flex: 0.6; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 10px; cursor: pointer; color: #475569;" onclick="cancelMpesaPayment()">' +

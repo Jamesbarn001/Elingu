@@ -4994,10 +4994,10 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
                     const encodedAssignments = encodeURIComponent(JSON.stringify(f.assignments || []));
                     actionsHtml = '<div style="display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap;">';
                     if (!isDeputy) {
-                      actionsHtml += '<button type="button" class="btn-primary" style="padding: 4px 10px; font-size: 11.5px; width: auto; background: #3B82F6; margin: 0;" onclick="openPromoteDeputyModal(\'' + f.id + '\', decodeURIComponent(\'' + encodedName + '\'))">⭐ Promote Deputy</button>';
+                      actionsHtml += '<button type="button" class="btn-primary" style="padding: 4px 10px; font-size: 11.5px; width: auto; background: #3B82F6; margin: 0;" data-id="' + f.id + '" data-name="' + encodedName + '" onclick="openPromoteDeputyModal(this.dataset.id, decodeURIComponent(this.dataset.name))">⭐ Promote Deputy</button>';
                     }
-                    actionsHtml += '<button type="button" class="btn-primary" style="padding: 4px 10px; font-size: 11.5px; width: auto; background: var(--bg-cream); color: var(--text-main); border: 1px solid var(--border-warm); margin: 0;" onclick="openEditAssignmentsModal(\'' + f.id + '\', decodeURIComponent(\'' + encodedName + '\'), \'' + encodedAssignments + '\')">✏️ Edit</button>';
-                    actionsHtml += '<button type="button" class="btn-primary" style="padding: 4px 10px; font-size: 11.5px; width: auto; background: #EF4444; margin: 0;" onclick="openOffboardModal(\'' + f.id + '\', decodeURIComponent(\'' + encodedName + '\'))">🗑️ Offboard</button>';
+                    actionsHtml += '<button type="button" class="btn-primary" style="padding: 4px 10px; font-size: 11.5px; width: auto; background: var(--bg-cream); color: var(--text-main); border: 1px solid var(--border-warm); margin: 0;" data-id="' + f.id + '" data-name="' + encodedName + '" data-assignments="' + encodedAssignments + '" onclick="openEditAssignmentsModal(this.dataset.id, decodeURIComponent(this.dataset.name), this.dataset.assignments)">✏️ Edit</button>';
+                    actionsHtml += '<button type="button" class="btn-primary" style="padding: 4px 10px; font-size: 11.5px; width: auto; background: #EF4444; margin: 0;" data-id="' + f.id + '" data-name="' + encodedName + '" onclick="openOffboardModal(this.dataset.id, decodeURIComponent(this.dataset.name))">🗑️ Offboard</button>';
                     actionsHtml += '</div>';
                   }
                 } else {

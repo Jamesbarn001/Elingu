@@ -7188,9 +7188,9 @@ app.get('/parent/portal', (req, res) => {
 
           let tabsHtml = '<div style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid #E2E8F0; padding-bottom: 12px; flex-wrap: wrap; align-items: center;">' +
             '<span style="font-size: 12px; font-weight: 700; color: #475569; margin-right: 4px;">Curriculum Tabs:</span>' +
-            '<button type="button" class="portal-learner-tab active" id="tabLearnersAll" onclick="filterLearnersByCurriculum(\'ALL\')" style="background: #0D3A26; color: #FFFFFF; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🌿 All Learners (' + children.length + ')</button>' +
-            '<button type="button" class="portal-learner-tab" id="tabLearnersCbc" onclick="filterLearnersByCurriculum(\'CBC\')" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🇰🇪 CBC / CBE (' + cbcChildren.length + ')</button>' +
-            '<button type="button" class="portal-learner-tab" id="tabLearnersBri" onclick="filterLearnersByCurriculum(\'BRITISH\')" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🇬🇧 British / IGCSE (' + briChildren.length + ')</button>' +
+            '<button type="button" class="portal-learner-tab active" id="tabLearnersAll" data-cur="ALL" onclick="filterLearnersByCurriculum(this.dataset.cur)" style="background: #0D3A26; color: #FFFFFF; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🌿 All Learners (' + children.length + ')</button>' +
+            '<button type="button" class="portal-learner-tab" id="tabLearnersCbc" data-cur="CBC" onclick="filterLearnersByCurriculum(this.dataset.cur)" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🇰🇪 CBC / CBE (' + cbcChildren.length + ')</button>' +
+            '<button type="button" class="portal-learner-tab" id="tabLearnersBri" data-cur="BRITISH" onclick="filterLearnersByCurriculum(this.dataset.cur)" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🇬🇧 British / IGCSE (' + briChildren.length + ')</button>' +
           '</div>';
 
           let html = '<div class="portal-card" style="padding: 22px 24px; margin-bottom: 20px; border: 1.5px solid #E0D8CC; background: #FFFFFF; border-radius: 14px; box-shadow: 0 3px 14px rgba(0,0,0,0.03);">' +
@@ -7284,8 +7284,8 @@ app.get('/parent/portal', (req, res) => {
                   html += '<div style="background: #FEF3C7; border: 1.5px solid #F59E0B; border-radius: 8px; padding: 10px 12px; margin-top: 6px; font-size: 12px; color: #92400E; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">' +
                     '<span>🔔 <strong>Requested:</strong> Unlock <em>' + reqSubj + '</em> <span style="font-size: 11px; color: #059669; font-weight: 700;">(Included in Premium!)</span></span>' +
                     '<div style="display: flex; gap: 6px;">' +
-                      '<button type="button" onclick="approveSubjectRequestDirectly(\'' + c.id + '\', \'' + encodeURIComponent(reqSubj) + '\', \'' + encodeURIComponent(c.handle) + '\')" style="background: #059669; color: #FFFFFF; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer;">Approve &amp; Add 🚀</button>' +
-                      '<button type="button" onclick="dismissSubjectRequest(\'' + c.id + '\', \'' + encodeURIComponent(reqSubj) + '\')" style="background: transparent; color: #92400E; border: 1px solid #D97706; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer;" title="Dismiss request">✕</button>' +
+                      '<button type="button" data-cid="' + c.id + '" data-subj="' + encodeURIComponent(reqSubj) + '" data-cname="' + encodeURIComponent(c.handle) + '" onclick="approveSubjectRequestDirectly(this.dataset.cid, decodeURIComponent(this.dataset.subj), decodeURIComponent(this.dataset.cname))" style="background: #059669; color: #FFFFFF; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer;">Approve &amp; Add 🚀</button>' +
+                      '<button type="button" data-cid="' + c.id + '" data-subj="' + encodeURIComponent(reqSubj) + '" onclick="dismissSubjectRequest(this.dataset.cid, decodeURIComponent(this.dataset.subj))" style="background: transparent; color: #92400E; border: 1px solid #D97706; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer;" title="Dismiss request">✕</button>' +
                     '</div>' +
                   '</div>';
                 } else {
@@ -7295,18 +7295,18 @@ app.get('/parent/portal', (req, res) => {
                     html += '<div style="background: #FEF3C7; border: 1.5px solid #F59E0B; border-radius: 8px; padding: 10px 12px; margin-top: 6px; font-size: 12px; color: #92400E; display: flex; flex-direction: column; gap: 8px;">' +
                       '<div style="display: flex; justify-content: space-between; align-items: center;">' +
                         '<span>🔔 <strong>Requested:</strong> Unlock <em>' + reqSubj + '</em> (' + enrolled.length + '/' + maxAllowed + ' ' + (isStd ? 'Standard' : 'Free') + ' slots used)</span>' +
-                        '<button type="button" onclick="dismissSubjectRequest(\'' + c.id + '\', \'' + encodeURIComponent(reqSubj) + '\')" style="background: transparent; color: #92400E; border: none; font-size: 14px; cursor: pointer;" title="Dismiss">✕</button>' +
+                        '<button type="button" data-cid="' + c.id + '" data-subj="' + encodeURIComponent(reqSubj) + '" onclick="dismissSubjectRequest(this.dataset.cid, decodeURIComponent(this.dataset.subj))" style="background: transparent; color: #92400E; border: none; font-size: 14px; cursor: pointer;" title="Dismiss">✕</button>' +
                       '</div>' +
                       '<div style="display: flex; gap: 6px; flex-wrap: wrap;">' +
-                        '<button type="button" onclick="openPaymentModal(\'' + (isStd ? 'premium' : 'standard') + '\', \'' + c.id + '\', \'' + encodeURIComponent(c.handle) + '\')" style="background: #D97706; color: #FFFFFF; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer;">Upgrade to Unlock 🚀</button>' +
+                        '<button type="button" data-tier="' + (isStd ? 'premium' : 'standard') + '" data-cid="' + c.id + '" data-cname="' + encodeURIComponent(c.handle) + '" onclick="openPaymentModal(this.dataset.tier, this.dataset.cid, decodeURIComponent(this.dataset.cname))" style="background: #D97706; color: #FFFFFF; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer;">Upgrade to Unlock 🚀</button>' +
                       '</div>' +
                     '</div>';
                   } else {
                     html += '<div style="background: #FEF3C7; border: 1.5px solid #F59E0B; border-radius: 8px; padding: 10px 12px; margin-top: 6px; font-size: 12px; color: #92400E; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">' +
                       '<span>🔔 <strong>Requested:</strong> Unlock <em>' + reqSubj + '</em> <span style="font-size: 11px; color: #059669; font-weight: 700;">(Slot Available!)</span></span>' +
                       '<div style="display: flex; gap: 6px;">' +
-                        '<button type="button" onclick="approveSubjectRequestDirectly(\'' + c.id + '\', \'' + encodeURIComponent(reqSubj) + '\', \'' + encodeURIComponent(c.handle) + '\')" style="background: #059669; color: #FFFFFF; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer;">Approve &amp; Add 🚀</button>' +
-                        '<button type="button" onclick="dismissSubjectRequest(\'' + c.id + '\', \'' + encodeURIComponent(reqSubj) + '\')" style="background: transparent; color: #92400E; border: 1px solid #D97706; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer;" title="Dismiss">✕</button>' +
+                        '<button type="button" data-cid="' + c.id + '" data-subj="' + encodeURIComponent(reqSubj) + '" data-cname="' + encodeURIComponent(c.handle) + '" onclick="approveSubjectRequestDirectly(this.dataset.cid, decodeURIComponent(this.dataset.subj), decodeURIComponent(this.dataset.cname))" style="background: #059669; color: #FFFFFF; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer;">Approve &amp; Add 🚀</button>' +
+                        '<button type="button" data-cid="' + c.id + '" data-subj="' + encodeURIComponent(reqSubj) + '" onclick="dismissSubjectRequest(this.dataset.cid, decodeURIComponent(this.dataset.subj))" style="background: transparent; color: #92400E; border: 1px solid #D97706; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer;" title="Dismiss">✕</button>' +
                       '</div>' +
                     '</div>';
                   }
@@ -7378,7 +7378,7 @@ app.get('/parent/portal', (req, res) => {
               renderDashboard(await dashRes.json());
             } else {
               if (data.needsUpgrade) {
-                if (confirm(data.error + '\n\nWould you like to upgrade their plan now?')) {
+                if (confirm(data.error + '\\n\\nWould you like to upgrade their plan now?')) {
                   promptChildUpgrade(studentId);
                 }
               } else {

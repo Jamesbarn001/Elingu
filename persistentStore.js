@@ -39,6 +39,9 @@ let lastError = null;
 let lastFlushAt = null;
 
 function isEnabled() {
+  if (process.env.NODE_ENV === 'test' || process.env.ELINGU_DATA_DIR) {
+    return false;
+  }
   return !!process.env.DATABASE_URL;
 }
 

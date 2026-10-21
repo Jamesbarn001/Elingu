@@ -193,6 +193,20 @@ router.post('/api/admin/schools/pilot-status', requireAdminAuth, (req, res) => {
   }
 });
 
+// POST /api/admin/schools/approve — Super Admin institutional approval
+router.post('/api/admin/schools/approve', requireAdminAuth, (req, res) => {
+  try {
+    const { schoolId } = req.body || {};
+    if (!schoolId) return res.status(400).json({ error: 'School ID required.' });
+    const teacherStore = require('./teacherStore');
+    const result = teacherStore.approveSchoolInstitution(schoolId, req.admin?.email || 'superadmin');
+    if (!result.success) return res.status(400).json({ error: result.error });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to approve school institution.' });
+  }
+});
+
 // GET /api/admin/safety-logs — Tab 4: Safety Watchtower
 router.get('/api/admin/safety-logs', requireAdminAuth, (req, res) => {
   try {

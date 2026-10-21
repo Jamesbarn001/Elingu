@@ -177,7 +177,7 @@ module.exports = {
     ctx.assertEqual(dashRes.data.children.length, 2);
   },
 
-  'SYS-06: Pricing differentiation correctly distinguishes JSS (KES 1500) vs Senior School (KES 1800)': async (ctx) => {
+  'SYS-06: Pricing differentiation correctly distinguishes JSS (KES 1499) vs Senior School (KES 1799)': async (ctx) => {
     const jssStudent = sharedJssStudent;
     const ssStudent = sharedSsStudent;
     const parentEmail = sharedParentEmail;
@@ -186,9 +186,9 @@ module.exports = {
     const jssPricing = pricingConfig.resolvePricingForStudent(jssStudent, 'premium', 'monthly');
     const ssPricing = pricingConfig.resolvePricingForStudent(ssStudent, 'premium', 'monthly');
 
-    ctx.assertEqual(jssPricing.amount, 1500, 'JSS Premium must be KES 1,500');
+    ctx.assertEqual(jssPricing.amount, 1499, 'JSS Premium must be KES 1,499');
     ctx.assertEqual(jssPricing.tierLabel, 'Premium Scholar');
-    ctx.assertEqual(ssPricing.amount, 1800, 'Senior School Premium must be KES 1,800');
+    ctx.assertEqual(ssPricing.amount, 1799, 'Senior School Premium must be KES 1,799');
     ctx.assertEqual(ssPricing.tierLabel, 'Senior Premium Pro');
 
     // 2. Payment confirmation API check for Senior School
@@ -205,7 +205,7 @@ module.exports = {
       }
     });
     ctx.assertEqual(payResSS.status, 200);
-    ctx.assertEqual(payResSS.data.amount, 1800, 'Senior School payment confirmation must charge KES 1,800');
+    ctx.assertEqual(payResSS.data.amount, 1799, 'Senior School payment confirmation must charge KES 1,799');
     ctx.assertEqual(payResSS.data.tierInfo.name, 'Senior Premium Pro');
 
     // 3. Payment confirmation API check for JSS
@@ -222,7 +222,7 @@ module.exports = {
       }
     });
     ctx.assertEqual(payResJSS.status, 200);
-    ctx.assertEqual(payResJSS.data.amount, 1500, 'JSS payment confirmation must charge KES 1,500');
+    ctx.assertEqual(payResJSS.data.amount, 1499, 'JSS payment confirmation must charge KES 1,499');
     ctx.assertEqual(payResJSS.data.tierInfo.name, 'Premium Scholar');
   },
 

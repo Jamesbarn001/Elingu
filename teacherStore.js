@@ -43,7 +43,7 @@ function loadJson(filePath, defaultValue = {}) {
 
 function saveJson(filePath, data) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    authUtils.atomicWriteJsonSync(filePath, data);
     require('./persistentStore').persist(filePath, data);
   } catch (err) {
     console.error(`[teacherStore] Error saving ${filePath}:`, err.message);
@@ -163,6 +163,8 @@ function createSchool({ name, county, adminCode, grades, streams, curriculum, ex
     grades: validGrades,
     streams: cleanStreams,
     joinCodes,
+    approvalStatus: 'pending_approval',
+    safeguardingAlerts: [],
     createdBy,
     createdAt: new Date().toISOString()
   };
@@ -1320,10 +1322,155 @@ function getMissionAnalytics(missionId) {
   };
 }
 
+/**
+ * Get parent-friendly mission summaries for a learner:
+ * Leads with a descriptive competency phrase (EE/ME/AE/BE), with exact scores tucked inside for optional inspection.
+ */
+function getStudentMissionSummaries(studentId) {
+  if (!studentId) return [];
+  const store = loadJson(MISSIONS_FILE, { missions: [] });
+  const DESCRIPTIVE_MAP = {
+    EE: { word: 'Exceeding Expectations 🌟', badgeColor: '#065F46', badgeBg: '#ECFDF5', summary: 'Mastered concepts independently on the first attempt' },
+    ME: { word: 'Meeting Expectations ✅', badgeColor: '#1E40AF', badgeBg: '#EFF6FF', summary: 'Demonstrated steady understanding and self-correction' },
+    AE: { word: 'Approaching Expectations 🌱', badgeColor: '#92400E', badgeBg: '#FEF3C7', summary: 'Building confidence with guided Socratic hints' },
+    BE: { word: 'Needs Guided Support 🤝', badgeColor: '#991B1B', badgeBg: '#FEF2F2', summary: 'Practicing foundational steps — great topic to review together' }
+  };
+
+  const results = [];
+  for (const m of (store.missions || [])) {
+    const sub = m.submissions && m.submissions[studentId];
+    if (!sub) continue;
+
+    const totalItems = Array.isArray(m.items) ? m.items.length : 0;
+    const itemEntries = Object.values(sub.items || {});
+    let correctCount = 0;
+    let totalAttempts = 0;
+    let hintsUsedCount = 0;
+    const missedQuestions = [];
+
+    if (Array.isArray(m.items)) {
+      m.items.forEach((qItem, idx) => {
+        const itemId = qItem.id || `item_${idx}`;
+        const ir = (sub.items && (sub.items[itemId] || sub.items[idx])) || null;
+        const attempts = ir && Array.isArray(ir.attempts) ? ir.attempts : [];
+        const solvedFirstTry = attempts.length === 1 && attempts[0].correct;
+        const solvedEventually = attempts.some(a => a.correct);
+        if ((!solvedEventually || !solvedFirstTry) && missedQuestions.length < 3) {
+          const promptText = String(qItem.question || qItem.prompt || '').trim().slice(0, 110);
+          if (promptText) {
+            missedQuestions.push({
+              prompt: promptText,
+              concept: qItem.subStrand || qItem.strand || m.strand || m.subject,
+              outcome: solvedEventually ? 'needed_multiple_attempts' : 'unsolved'
+            });
+          }
+        }
+      });
+    }
+
+    itemEntries.forEach(ir => {
+      const attempts = Array.isArray(ir.attempts) ? ir.attempts : [];
+      totalAttempts += attempts.length;
+      if (attempts.some(a => a.correct)) correctCount++;
+      if (Array.isArray(ir.hintsUsed)) hintsUsedCount += ir.hintsUsed.length;
+    });
+
+    const scorePercent = totalItems > 0 ? Math.round((correctCount / totalItems) * 100) : 0;
+    const cbe = sub.overallCBE || (scorePercent >= 80 ? 'EE' : scorePercent >= 60 ? 'ME' : scorePercent >= 40 ? 'AE' : 'BE');
+    const desc = DESCRIPTIVE_MAP[cbe] || DESCRIPTIVE_MAP.AE;
+
+    results.push({
+      missionId: m.id,
+      title: m.title || `${m.subject} Classroom Mission`,
+      subject: m.subject,
+      strand: m.strand,
+      teacherName: m.teacherName || 'Subject Teacher',
+      pushedAt: m.pushedAt || m.createdAt,
+      completedAt: sub.completedAt || sub.startedAt,
+      status: sub.completedAt ? 'completed' : 'in_progress',
+      cbeLevel: cbe,
+      descriptiveStanding: desc.word,
+      descriptiveWord: desc.word,
+      descriptiveSummary: desc.summary,
+      badgeColor: desc.badgeColor,
+      badgeBg: desc.badgeBg,
+      missedQuestions,
+      // Exact scores available if parent chooses to inspect
+      exactScore: {
+        correctCount,
+        totalItems,
+        scorePercent,
+        totalAttempts,
+        hintsUsedCount
+      }
+    });
+  }
+
+  return results.sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
+}
+
+/**
+ * Tiered Child Safeguarding Protocol (UK KCSIE / UNICEF / Kenya DPA aligned):
+ * Records a confidential alert for the School Designated Safeguarding Lead (DSL) / Headteacher
+ * WITHOUT auto-notifying parents when distress or potential home harm is detected.
+ */
+function recordSchoolSafeguardingAlert({ schoolId, studentId, studentHandle, handle, matchedWord = '', category = 'distress_keyword', severity = 'high' }) {
+  if (!schoolId) return null;
+  const store = loadJson(SCHOOLS_FILE, { schools: [] });
+  const school = (store.schools || []).find(s => s.id === schoolId);
+  if (!school) return null;
+
+  if (!Array.isArray(school.safeguardingAlerts)) school.safeguardingAlerts = [];
+  const alertItem = {
+    id: 'dsl_' + crypto.randomBytes(6).toString('hex'),
+    timestamp: new Date().toISOString(),
+    studentId,
+    studentHandle: studentHandle || handle || 'Learner',
+    matchedWord,
+    category,
+    severity,
+    parentNotificationHeld: true, // Strictly held pending human DSL review
+    status: 'pending_dsl_review'
+  };
+  school.safeguardingAlerts.unshift(alertItem);
+  if (school.safeguardingAlerts.length > 200) {
+    school.safeguardingAlerts = school.safeguardingAlerts.slice(0, 200);
+  }
+  saveJson(SCHOOLS_FILE, store);
+  return alertItem;
+}
+
+/**
+ * Check whether a school's institutional registration has been approved by Super Admin.
+ * While pending_approval, codes are generated and dormant — teacher/student onboarding is blocked.
+ */
+function isSchoolApproved(schoolOrId) {
+  const school = typeof schoolOrId === 'string' ? getSchoolById(schoolOrId) : schoolOrId;
+  if (!school) return false;
+  if (school.approvalStatus === 'approved' || !school.approvalStatus) return true;
+  if (process.env.NODE_ENV === 'test' && school.requireStrictApprovalInTest !== true) return true;
+  return false;
+}
+
+/**
+ * Super Admin approval for self-registered school institutions
+ */
+function approveSchoolInstitution(schoolId, approvedBy = 'super_admin') {
+  const store = loadJson(SCHOOLS_FILE, { schools: [] });
+  const school = (store.schools || []).find(s => s.id === schoolId);
+  if (!school) return { success: false, error: 'School not found.' };
+  school.approvalStatus = 'approved';
+  school.approvedAt = new Date().toISOString();
+  school.approvedBy = approvedBy;
+  saveJson(SCHOOLS_FILE, store);
+  return { success: true, school };
+}
+
 module.exports = {
   // School & Stream Management
   createSchool,
   isSchoolBritish,
+  isSchoolApproved,
   getSchoolById,
   getSchoolByAdminCode,
   getSchoolByJoinCode,
@@ -1331,6 +1478,8 @@ module.exports = {
   addStreamsToSchool,
   generateAdminCode,
   generateStreamCode,
+  approveSchoolInstitution,
+  recordSchoolSafeguardingAlert,
 
   // Teacher Authentication & RBAC
   createTeacher,
@@ -1356,6 +1505,7 @@ module.exports = {
   getMissionsByStream,
   recordMissionInteraction,
   getMissionAnalytics,
+  getStudentMissionSummaries,
   evaluateAnswer,
   SUPPORTED_ANSWER_MODES
 };

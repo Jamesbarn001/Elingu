@@ -4,6 +4,7 @@
 // login lockout logic, and weak PIN blocklists
 // ════════════════════════════════════════════════════════════
 
+const fs = require('fs');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 
@@ -380,8 +381,12 @@ function verifyOTPFromRecord(record, otp) {
 // TEACHER TOKEN AUTHENTICATION & MULTI-LAYER SANITIZATION
 // ══════════════════════════════════════════════════════════════
 
-// Secure Secret: uses process.env.SESSION_SECRET, or deterministic default secret
-const TEACHER_TOKEN_SECRET = process.env.SESSION_SECRET || 'elingu_teacher_session_master_secret_2026';
+// Secure Secret: uses process.env.SESSION_SECRET; in production without SESSION_SECRET, generates a strong ephemeral key
+const IS_PROD_ENV = process.env.NODE_ENV === 'production';
+if (IS_PROD_ENV && !process.env.SESSION_SECRET) {
+  console.warn('⚠️ [authUtils] SESSION_SECRET is not set in production! Using ephemeral 256-bit key for this instance.');
+}
+const TEACHER_TOKEN_SECRET = process.env.SESSION_SECRET || (IS_PROD_ENV ? crypto.randomBytes(32).toString('hex') : 'elingu_teacher_session_master_secret_2026');
 const TEACHER_TOKEN_TTL_HOURS = 24;
 
 /**
@@ -438,7 +443,7 @@ function verifyTeacherToken(token) {
 // STUDENT TOKEN AUTHENTICATION
 // ══════════════════════════════════════════════════════════════
 
-const STUDENT_TOKEN_SECRET = process.env.STUDENT_TOKEN_SECRET || process.env.SESSION_SECRET || 'elingu_student_session_master_secret_2026';
+const STUDENT_TOKEN_SECRET = process.env.STUDENT_TOKEN_SECRET || process.env.SESSION_SECRET || (IS_PROD_ENV ? crypto.randomBytes(32).toString('hex') : 'elingu_student_session_master_secret_2026');
 const STUDENT_TOKEN_TTL_HOURS = 168; // 7 days
 
 /**
@@ -560,6 +565,44 @@ function sanitizeHtml(str) {
     .replace(/`/g, '&#x60;');
 }
 
+/**
+ * Atomic JSON write helper: writes to a temporary file and renames atomically
+ * (with direct write fallback if Windows file locking prevents rename).
+ */
+function atomicWriteJsonSync(filePath, data) {
+  const serialized = JSON.stringify(data, null, 2);
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, serialized, 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch (_) {}
+    fs.writeFileSync(filePath, serialized, 'utf8');
+  }
+}
+
+/**
+ * Strips all credential hashes, OTP secrets, and internal lockout state from a student object
+ */
+function sanitizeStudentForClient(student) {
+  if (!student || typeof student !== 'object') return student;
+  const {
+    pinHash: _ph,
+    tempPin: _tp,
+    otpHash: _oh,
+    otpExpiresAt: _oe,
+    otpVerified: _ov,
+    otpRequestCount: _orc,
+    otpCooldownUntil: _ocu,
+    failedLoginAttempts: _fla,
+    lockedUntil: _lu,
+    ...safe
+  } = student;
+  return safe;
+}
+
 module.exports = {
   // Password & PIN strength
   validatePassword,
@@ -595,6 +638,8 @@ module.exports = {
   generateAdminToken,
   verifyAdminToken,
   sanitizeHtml,
+  atomicWriteJsonSync,
+  sanitizeStudentForClient,
   // Constants
   PARENT_MAX_ATTEMPTS,
   PARENT_LOCKOUT_MINUTES,

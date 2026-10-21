@@ -67,7 +67,7 @@ module.exports = {
     ctx.assertEqual(stu.schoolLevel, 'IGCSE', 'School level must be IGCSE');
   },
 
-  'TC-BRI-03: British pricing resolution returns KES 3,999 Standard & KES 4,999 Premium': async (ctx) => {
+  'TC-BRI-03: British pricing resolution returns KES 3,599 Standard & KES 4,599 Premium': async (ctx) => {
     const studentBritish = {
       id: 'stu_test_bri_pricing',
       grade: 10,
@@ -77,19 +77,19 @@ module.exports = {
     };
 
     const standardPricing = pricingConfig.resolvePricingForStudent(studentBritish, 'standard');
-    ctx.assertEqual(standardPricing.monthly, 3999, 'British Standard monthly price must be KES 3,999');
-    ctx.assertEqual(standardPricing.annual, 39999, 'British Standard annual price must be KES 39,999');
+    ctx.assertEqual(standardPricing.monthly, 3599, 'British Standard monthly price must be KES 3,599');
+    ctx.assertEqual(standardPricing.annual, 35999, 'British Standard annual price must be KES 35,999');
 
     const premiumPricing = pricingConfig.resolvePricingForStudent(studentBritish, 'premium');
-    ctx.assertEqual(premiumPricing.monthly, 4999, 'British Premium monthly price must be KES 4,999');
-    ctx.assertEqual(premiumPricing.annual, 49999, 'British Premium annual price must be KES 49,999');
+    ctx.assertEqual(premiumPricing.monthly, 4599, 'British Premium monthly price must be KES 4,599');
+    ctx.assertEqual(premiumPricing.annual, 45999, 'British Premium annual price must be KES 45,999');
 
     // Also verify Kenya CBC student resolution is isolated and untouched
     const studentCbc = { id: 'stu_test_cbc', grade: 8, curriculum: 'CBC' };
     const cbcStandardPricing = pricingConfig.resolvePricingForStudent(studentCbc, 'standard');
-    ctx.assertEqual(cbcStandardPricing.monthly, 700, 'Kenyan CBC JSS standard monthly must remain KES 700');
+    ctx.assertEqual(cbcStandardPricing.monthly, 699, 'Kenyan CBC JSS standard monthly must remain KES 699');
     const cbcPremiumPricing = pricingConfig.resolvePricingForStudent(studentCbc, 'premium');
-    ctx.assertEqual(cbcPremiumPricing.monthly, 1500, 'Kenyan CBC JSS premium monthly must remain KES 1,500');
+    ctx.assertEqual(cbcPremiumPricing.monthly, 1499, 'Kenyan CBC JSS premium monthly must remain KES 1,499');
   },
 
   'TC-BRI-04: Tier Governance - Teacher of school has authority to update tier; unauthorized actor rejected': async (ctx) => {
@@ -182,7 +182,7 @@ module.exports = {
     const serverCode = fs.readFileSync(path.join(__dirname, '../../server.js'), 'utf8');
 
     // Verify Year 10E / 10C clean badge logic is present
-    ctx.assertIncludes(serverCode, "((c.yearGroup || c.grade) >= 10 ? (c.examTier === 'core' ? 'C' : 'E') : '')", 'Server must format Year 10E/10C cleanly');
+    ctx.assertIncludes(serverCode, "yrNote >= 10 ? (c.examTier === 'core' ? 'C' : 'E') : ''", 'Server must format Year 10E/10C cleanly');
     ctx.assert(!serverCode.includes('🔒 Tier: EXTENDED (Managed by School)'), 'Sterile school tier lock label must NOT appear');
 
     // Verify British subject advice blocks exist

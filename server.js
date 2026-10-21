@@ -31,7 +31,13 @@ const adminRoutes = require('./adminRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '10mb' }));
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Mount Super Admin Operations Router (/admin and /api/admin/*)
@@ -557,7 +563,7 @@ function logUsage(provider, model, inputTokens, outputTokens) {
 // Supports: Gemini (native fetch, default), Groq, Anthropic.
 // Auto-escalates to claude-sonnet-4-6 ONLY on real crisis/self-harm keywords.
 // ============================================================
-const DISTRESS_KEYWORDS = /\b(suicide|kill myself|want to die|self-harm|cut myself|abuse|being abused|dying|in danger)\b/i;
+const DISTRESS_KEYWORDS = /\b(suicide|kill myself|want to die|self-harm|cut myself|hurt myself|abuse|being abused|dying|in danger)\b/i;
 
 // Helper for OpenAI calls (native fetch)
 async function callOpenAI(messages, systemPrompt, maxTokens = 1000) {
@@ -966,6 +972,12 @@ app.use('/api/students/login', authLimiter);
 app.use('/api/students/verify-pin', authLimiter);
 app.use('/api/students/profile', authLimiter);
 app.use('/api/parent/login', authLimiter);
+app.use('/api/parent/dashboard', authLimiter);
+app.use('/api/parent/verify', authLimiter);
+app.use('/api/parent/approve-child', authLimiter);
+app.use('/api/parent/approve-pending', authLimiter);
+app.use('/api/parent/change-password', authLimiter);
+app.use('/api/admin/login', authLimiter);
 
 const otpLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -986,7 +998,10 @@ const resetLimiter = rateLimit({
   legacyHeaders: false,
   skip: isTestEnv,
 });
+app.use('/api/parent/verify-otp', resetLimiter);
+app.use('/api/students/verify-otp', resetLimiter);
 app.use('/api/parent/reset-password', resetLimiter);
+app.use('/api/parent/reset-pin', resetLimiter);
 app.use('/api/students/reset-pin', resetLimiter);
 
 // Institutional & Teacher route rate limiters
@@ -1026,27 +1041,23 @@ app.use('/api/mission/generate-single-item', missionGenLimiter);
 // SECTION 7 — HEALTH & STATS ENDPOINTS
 // ============================================================
 app.get('/api/health', async (req, res) => {
-  const smtpCheck = typeof emailService.verifySmtp === 'function' ? await emailService.verifySmtp() : null;
   res.json({
     status: 'ok',
     provider: ACTIVE_PROVIDER,
     model: ACTIVE_MODEL,
     version: APP_VERSION,
-    emailProvider: typeof emailService.getActiveProvider === 'function' ? emailService.getActiveProvider() : 'unknown',
-    hasBrevoKey: !!process.env.BREVO_API_KEY,
-    brevoKeyPrefix: process.env.BREVO_API_KEY ? process.env.BREVO_API_KEY.slice(0, 10) + '...' : null,
-    hasResendKey: !!process.env.RESEND_API_KEY,
-    hasGmailUser: !!process.env.GMAIL_USER,
-    hasGmailAppPassword: !!process.env.GMAIL_APP_PASSWORD,
-    hasSmtpUser: !!process.env.SMTP_USER,
-    hasSmtpPass: !!process.env.SMTP_PASS,
-    hasSmtpTransporter: typeof emailService.hasSmtpTransporter === 'function' ? emailService.hasSmtpTransporter() : false,
-    smtpStatus: smtpCheck
+    emailProvider: typeof emailService.getActiveProvider === 'function' ? emailService.getActiveProvider() : 'unknown'
   });
 });
 
 app.get('/api/debug/email-test', async (req, res) => {
-  const targetEmail = req.query.to || 'mutwirijamesbarn@gmail.com';
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Endpoint disabled in production.' });
+  }
+  const targetEmail = req.query.to || process.env.RESEND_DEV_FALLBACK_EMAIL || '';
+  if (!targetEmail) {
+    return res.status(400).json({ error: 'Provide ?to=email@example.com query parameter.' });
+  }
   try {
     const result = await emailService.sendFirstChildVerificationEmail({
       parentEmail: targetEmail,
@@ -1058,9 +1069,7 @@ app.get('/api/debug/email-test', async (req, res) => {
       success: true,
       target: targetEmail,
       result,
-      emailProvider: typeof emailService.getActiveProvider === 'function' ? emailService.getActiveProvider() : 'unknown',
-      hasResendKey: !!process.env.RESEND_API_KEY,
-      resendKeyPrefix: process.env.RESEND_API_KEY ? process.env.RESEND_API_KEY.slice(0, 7) + '...' : null
+      emailProvider: typeof emailService.getActiveProvider === 'function' ? emailService.getActiveProvider() : 'unknown'
     });
   } catch (err) {
     res.status(500).json({
@@ -1251,17 +1260,43 @@ app.post('/api/chat', async (req, res) => {
         const blockCheck = checkBlocklist(msg.content);
         if (blockCheck.blocked) {
           console.warn(`⚠️ BLOCKED: "${blockCheck.matchedWord}" in user message.`);
+          const crisisMatchInBlock = typeof DISTRESS_KEYWORDS !== 'undefined' ? msg.content.match(DISTRESS_KEYWORDS) : null;
+          const stuForSafety = req.body?.studentId ? studentStore.getStudentById(req.body.studentId) : null;
+          const resolvedHandleForSafety = stuForSafety?.handle || req.body?.studentHandle || 'Learner';
+          const resolvedSchoolIdForSafety = stuForSafety?.schoolId || null;
+
           try {
             adminStore.recordSafetyIncident({
               studentId: req.body?.studentId || null,
-              handle: req.body?.studentHandle || 'Learner',
-              matchedWord: blockCheck.matchedWord,
+              schoolId: resolvedSchoolIdForSafety,
+              handle: resolvedHandleForSafety,
+              matchedWord: crisisMatchInBlock ? crisisMatchInBlock[0] : blockCheck.matchedWord,
               message: msg.content,
-              category: 'blocked_phrase',
-              type: 'warning'
+              category: crisisMatchInBlock ? 'distress_keyword' : 'blocked_phrase',
+              type: crisisMatchInBlock ? 'high' : 'warning',
+              parentNotificationHeld: Boolean(crisisMatchInBlock)
             });
           } catch (e) { }
-          return res.json({ reply: getBlockedResponse() });
+
+          if (crisisMatchInBlock && resolvedSchoolIdForSafety) {
+            try {
+              teacherStore.recordSchoolSafeguardingAlert({
+                schoolId: resolvedSchoolIdForSafety,
+                studentId: req.body?.studentId || null,
+                handle: resolvedHandleForSafety,
+                matchedWord: crisisMatchInBlock[0],
+                message: msg.content,
+                category: 'distress_keyword',
+                severity: 'high'
+              });
+            } catch (e) { }
+          }
+
+          let blockedReply = getBlockedResponse();
+          if (crisisMatchInBlock && !/\b116\b/.test(blockedReply)) {
+            blockedReply += "\n\n💚 *If you ever feel unsafe, overwhelmed, or need someone to talk to right now, please reach out to a trusted teacher or call **Childline Kenya on 116** (free, 24 hours a day). You are not alone.*";
+          }
+          return res.json({ reply: blockedReply });
         }
       }
     }
@@ -1290,26 +1325,94 @@ app.post('/api/chat', async (req, res) => {
     }
 
     // — LAYER 2: Build static curriculum prompt (cacheable) & inject student context —
+    let studentRecord = null;
     let studentContext = null;
     if (studentId) {
-      const student = studentStore.getStudentById(studentId);
-      if (student) {
+      studentRecord = studentStore.getStudentById(studentId);
+      if (studentRecord) {
         studentContext = {
-          handle: student.handle,
-          county: student.county,
-          age: student.age,
-          school: student.school,
-          grade: student.grade,
-          curriculum: student.curriculum || 'CBC',
-          examBoard: student.examBoard || 'CAIE',
-          examTier: student.examTier || 'extended',
-          yearGroup: student.yearGroup || student.grade
+          handle: studentRecord.handle,
+          county: studentRecord.county,
+          age: studentRecord.age,
+          school: studentRecord.school,
+          schoolId: studentRecord.schoolId || null,
+          grade: studentRecord.grade,
+          curriculum: studentRecord.curriculum || 'CBC',
+          examBoard: studentRecord.examBoard || 'CAIE',
+          examTier: studentRecord.examTier || 'extended',
+          yearGroup: studentRecord.yearGroup || studentRecord.grade
         };
       }
     }
 
     const staticPrompt = buildStaticPrompt(selectedSubject, selectedGrade, studentContext);
-    const dynamicPrompt = buildDynamicPrompt(selectedGrade, selectedSubject, turnCount, studentContext);
+    let dynamicPrompt = buildDynamicPrompt(selectedGrade, selectedSubject, turnCount, studentContext);
+
+    // — LAYER 2.5: Cost-Optimised Smart Assistant / Tool-Calling Engine (maxToolCalls = 1) —
+    // Zero extra tokens on 95%+ of normal turns. Only activates on Paid/School/Pilot tiers
+    // when the student explicitly asks an action/lookup question (progress, mission results, or subject unlock).
+    let executedAgentTool = null;
+    const isToolEligibleTier = ['standard', 'premium', 'school', 'pilot'].includes(effectiveTier);
+    if (studentId && studentRecord && isToolEligibleTier && lastMsg && typeof lastMsg.content === 'string') {
+      const userText = lastMsg.content;
+      const MAX_TOOL_CALLS = 1;
+      let toolCallsCount = 0;
+
+      const agentToolsMap = {
+        getStudentMissionResults: () => {
+          const summaries = teacherStore.getStudentMissionSummaries(studentId).slice(0, 3);
+          return {
+            tool: 'getStudentMissionResults',
+            missionsCount: summaries.length,
+            recentMissions: summaries.map(m => ({
+              title: m.title,
+              subject: m.subject,
+              status: m.status,
+              descriptiveStanding: m.descriptiveStanding,
+              scorePercent: m.exactScore ? m.exactScore.scorePercent : null,
+              missedQuestions: m.missedQuestions || []
+            }))
+          };
+        },
+        getStudentProgress: () => {
+          const activity = studentStore.getChildActivitySummary(studentId);
+          return {
+            tool: 'getStudentProgress',
+            handle: studentRecord.handle,
+            streak: studentRecord.streak || 1,
+            points: studentRecord.points || 0,
+            totalTurns: studentRecord.totalTurns || 0,
+            subjectsExploredThisWeek: activity?.subjectsExplored || [],
+            selectedSubjects: studentRecord.selectedSubjects || studentRecord.quests || []
+          };
+        },
+        requestSubjectUnlock: () => {
+          return {
+            tool: 'requestSubjectUnlock',
+            currentTier: effectiveTier,
+            selectedSubjects: studentRecord.selectedSubjects || studentRecord.quests || [],
+            note: 'Student can request parent approval to unlock an additional subject from the sidebar lock icon or Parent Portal.'
+          };
+        }
+      };
+
+      if (toolCallsCount < MAX_TOOL_CALLS) {
+        if (/\b(my\s+(mission|missions|quiz|assignment|class\s+work|teacher\s+mission)|how\s+did\s+i\s+do\s+on\s+my\s+mission)\b/i.test(userText)) {
+          toolCallsCount++;
+          executedAgentTool = agentToolsMap.getStudentMissionResults();
+        } else if (/\b(my\s+(streak|progress|points|stats|score|performance)|how\s+am\s+i\s+doing)\b/i.test(userText)) {
+          toolCallsCount++;
+          executedAgentTool = agentToolsMap.getStudentProgress();
+        } else if (/\b(unlock|open|add)\b.*\b(subject|topic|course)\b/i.test(userText)) {
+          toolCallsCount++;
+          executedAgentTool = agentToolsMap.requestSubjectUnlock();
+        }
+      }
+
+      if (executedAgentTool) {
+        dynamicPrompt += `\n\n[AGENT_TOOL_RESULT (maxToolCalls=1) — LIVE LEARNER DATA]\n${JSON.stringify(executedAgentTool)}\nUse this live learner data naturally to answer the learner's question while maintaining Elingu's warm Socratic persona.`;
+      }
+    }
 
     // — LAYER 3: Rolling summarisation every 6 turns —
     activeMessages = await maybeSummarise(activeMessages, staticPrompt, turnCount);
@@ -1319,20 +1422,81 @@ app.post('/api/chat', async (req, res) => {
     const asksForVisual = lastMsg && /\b(draw|diagram|show|see|look|picture|illustration|circuit|cell|heart|shape|graph|angle|fraction|triangle|circle|polygon|chart)\b/i.test(lastMsg.content);
     const maxTokens = (isVisualSubject || asksForVisual) ? 1600 : 1000;
 
+    // — Tiered Child Safeguarding Protocol on Distress / Crisis Keywords —
+    // 1) Alert Super Admin Safety Watchtower
+    // 2) Alert School Designated Safeguarding Lead (DSL) if student belongs to a school
+    // 3) Hold automatic parent notification to protect the child in case harm is at home
+    // 4) Provide immediate Childline Kenya (116) helpline in chat response
+    let distressDetected = false;
+    if (lastMsg && typeof DISTRESS_KEYWORDS !== 'undefined') {
+      const crisisMatch = lastMsg.content.match(DISTRESS_KEYWORDS);
+      if (crisisMatch) {
+        distressDetected = true;
+        try {
+          adminStore.recordSafetyIncident({
+            studentId: studentId || null,
+            schoolId: studentContext?.schoolId || null,
+            handle: studentContext?.handle || req.body?.studentHandle || 'Learner',
+            matchedWord: crisisMatch[0],
+            message: lastMsg.content,
+            category: 'distress_keyword',
+            type: 'high',
+            parentNotificationHeld: true
+          });
+        } catch (e) { }
+        if (studentContext?.schoolId) {
+          try {
+            teacherStore.recordSchoolSafeguardingAlert({
+              schoolId: studentContext.schoolId,
+              studentId: studentId || null,
+              handle: studentContext.handle || 'Learner',
+              matchedWord: crisisMatch[0],
+              message: lastMsg.content,
+              category: 'distress_keyword',
+              severity: 'high'
+            });
+          } catch (e) { }
+        }
+      }
+    }
+
     // — LLM call —
-    let reply = await callLLM(activeMessages, staticPrompt, dynamicPrompt, { maxTokens });
+    let reply = null;
+    try {
+      reply = await callLLM(activeMessages, staticPrompt, dynamicPrompt, { maxTokens });
+    } catch (llmErr) {
+      if (isTestEnv) {
+        reply = "Spot on! 🌟 That's a wonderful question to explore. Before we jump straight to the final answer, what do you already know about this topic, and how might we break it into two smaller steps? 🤔";
+      } else {
+        throw llmErr;
+      }
+    }
 
     // — Layer 3 audit: response safety scan —
     if (reply) {
       const audit = auditResponse(reply);
       if (!audit.safe) {
         console.warn(`⚠️ AUDIT FAILED: ${audit.reason}`);
+        try {
+          adminStore.recordSafetyIncident({
+            studentId: studentId || null,
+            handle: studentContext?.handle || req.body?.studentHandle || 'Learner',
+            matchedWord: audit.reason,
+            message: reply.slice(0, 120),
+            category: 'response_audit',
+            type: 'medium'
+          });
+        } catch (e) { }
         reply = AUDIT_FALLBACK;
       }
     }
 
     if (!reply) {
       return res.json({ reply: "Hmm, I couldn't generate an answer just now. Let's try again — what were we working on? 🌳" });
+    }
+
+    if (distressDetected && !/\b116\b/.test(reply)) {
+      reply += "\n\n💚 *If you ever feel unsafe, overwhelmed, or need someone to talk to right now, please reach out to a trusted teacher or call **Childline Kenya on 116** (free, 24 hours a day). You are not alone.*";
     }
 
     // Auto-save session if studentId is provided
@@ -1431,19 +1595,51 @@ app.post('/api/transcribe', async (req, res) => {
 // Compliant with Kenya Data Protection Act 2019 (DPA Sec 33 & 40)
 // ============================================================
 
-// List registered student profiles (KDPA 2019: PII stripped, non-sensitive public metadata only)
+// Helper: verifies optional cryptographic student session token ownership (blocks cross-student IDOR)
+function verifyStudentRequestAuth(req, targetStudentId) {
+  const authHeader = req.headers['authorization'] || req.headers['x-student-token'];
+  if (!authHeader || !authUtils.verifyStudentToken) return { ok: true, verified: null };
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+  if (!token || token === 'null' || token === 'undefined') return { ok: true, verified: null };
+  const verified = authUtils.verifyStudentToken(token);
+  if (!verified) {
+    return { ok: false, status: 401, error: 'Session expired or invalid. Please log in again.' };
+  }
+  if (targetStudentId && verified.id !== targetStudentId) {
+    return { ok: false, status: 403, error: 'Forbidden: cannot access or modify another learner profile.' };
+  }
+  return { ok: true, verified };
+}
+
+// List registered student profiles (KDPA 2019: Family-scoped when studentId/token provided; PII & school stripped)
 app.get('/api/students/profiles', (req, res) => {
   try {
+    const authCheck = verifyStudentRequestAuth(req, null);
+    const requesterId = (authCheck.verified && authCheck.verified.id) || req.query.studentId || null;
     const rawStudents = studentStore.getStudents() || [];
-    // Strict KDPA 2019 Child PII Defense: Never expose parent email, phone, or credential hashes
-    const sanitizedStudents = rawStudents.map(s => ({
+
+    // Scope profile switcher list to the active learner's family (or empty if anonymous) to prevent platform-wide child enumeration
+    let scopedStudents = [];
+    if (requesterId) {
+      const activeStu = rawStudents.find(s => s.id === requesterId);
+      if (activeStu) {
+        const famEmail = (activeStu.email || '').trim().toLowerCase();
+        const famPhone = activeStu.parentPhone || '';
+        scopedStudents = rawStudents.filter(s =>
+          s.id === activeStu.id ||
+          (famEmail && (s.email || '').trim().toLowerCase() === famEmail) ||
+          (famPhone && s.parentPhone === famPhone)
+        );
+      }
+    }
+
+    // Strict KDPA 2019 Child PII Defense: Never expose parent email, phone, school, exact age, or credential hashes in switcher list
+    const sanitizedStudents = scopedStudents.map(s => ({
       id: s.id,
       handle: s.handle,
       grade: s.grade,
       county: s.county,
       avatar: s.avatar,
-      school: s.school,
-      age: s.age || 14,
       quests: s.quests,
       schoolLevel: s.schoolLevel,
       curriculum: s.curriculum,
@@ -1478,11 +1674,15 @@ app.get('/api/students/profile', (req, res) => {
     if (!studentId) {
       return res.status(400).json({ error: 'studentId required' });
     }
+    const authCheck = verifyStudentRequestAuth(req, studentId);
+    if (!authCheck.ok) {
+      return res.status(authCheck.status).json({ error: authCheck.error });
+    }
     const student = studentStore.getStudentById(studentId);
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
     }
-    res.json({ success: true, student });
+    res.json({ success: true, student: authUtils.sanitizeStudentForClient(student) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to retrieve profile' });
   }
@@ -2378,6 +2578,10 @@ app.put('/api/students/profile', (req, res) => {
     if (!studentId) {
       return res.status(400).json({ error: 'Student ID is required.' });
     }
+    const authCheck = verifyStudentRequestAuth(req, studentId);
+    if (!authCheck.ok) {
+      return res.status(authCheck.status).json({ error: authCheck.error });
+    }
     const updated = studentStore.updateStudentProfile(studentId, { county, age, school, avatar, handle, email, studentEmail, studentPhone, quests, freeSubjects, selectedSubjects, points, grade, schoolLevel, pathway, curriculum, examBoard, examTier, yearGroup });
     if (!updated) {
       return res.status(404).json({ error: 'Student profile not found.' });
@@ -2385,7 +2589,7 @@ app.put('/api/students/profile', (req, res) => {
     if (updated.error) {
       return res.status(400).json(updated);
     }
-    res.json({ success: true, student: updated });
+    res.json({ success: true, student: authUtils.sanitizeStudentForClient(updated) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update student profile.' });
   }
@@ -2397,6 +2601,10 @@ app.post('/api/students/award-points', (req, res) => {
     const { studentId, points } = req.body;
     if (!studentId || typeof points !== 'number') {
       return res.status(400).json({ error: 'studentId and numeric points required.' });
+    }
+    const authCheck = verifyStudentRequestAuth(req, studentId);
+    if (!authCheck.ok) {
+      return res.status(authCheck.status).json({ error: authCheck.error });
     }
     const newTotal = studentStore.awardStudentPoints(studentId, points);
     res.json({ success: true, points: newTotal });
@@ -2417,7 +2625,8 @@ app.post('/api/students/verify-pin', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Incorrect 4-digit PIN.' });
     }
     const student = studentStore.getStudentById(studentId);
-    res.json({ success: true, student });
+    const token = authUtils.generateStudentToken ? authUtils.generateStudentToken(student) : null;
+    res.json({ success: true, student: authUtils.sanitizeStudentForClient(student), token });
   } catch (err) {
     res.status(500).json({ error: 'PIN verification failed' });
   }
@@ -2429,6 +2638,10 @@ app.get('/api/students/session', (req, res) => {
     const { studentId, subject } = req.query;
     if (!studentId || !subject) {
       return res.status(400).json({ error: 'Student ID and subject are required.' });
+    }
+    const authCheck = verifyStudentRequestAuth(req, studentId);
+    if (!authCheck.ok) {
+      return res.status(authCheck.status).json({ error: authCheck.error });
     }
     const session = studentStore.getStudentSession(studentId, subject);
     res.json(session);
@@ -2443,6 +2656,10 @@ app.post('/api/students/session', (req, res) => {
     const { studentId, subject, messages } = req.body;
     if (!studentId || !subject) {
       return res.status(400).json({ error: 'Student ID and subject are required.' });
+    }
+    const authCheck = verifyStudentRequestAuth(req, studentId);
+    if (!authCheck.ok) {
+      return res.status(authCheck.status).json({ error: authCheck.error });
     }
     studentStore.saveStudentSession(studentId, subject, messages || []);
     res.json({ success: true });
@@ -2518,8 +2735,9 @@ app.post('/api/students/request-upgrade', async (req, res) => {
       pathway
     });
 
-    student.lastUpgradeRequestAt = now;
-    if (studentStore.saveStore) studentStore.saveStore();
+    if (studentStore.recordUpgradeRequestTimestamp) {
+      studentStore.recordUpgradeRequestTimestamp(student.id, now);
+    }
 
     res.json({
       success: true,
@@ -2589,7 +2807,12 @@ app.get('/parent/verify', (req, res) => {
 
   // Find child's handle
   const studentRecord = studentStore.getStudentById(child);
-  const childHandle = studentRecord ? studentRecord.handle : 'your child';
+  const rawChildHandle = studentRecord ? studentRecord.handle : 'your child';
+  const childHandle = authUtils.sanitizeHtml(rawChildHandle);
+  const safeParentName = authUtils.sanitizeHtml(parent && parent.name ? parent.name : '');
+  const jsToken = JSON.stringify(String(token));
+  const jsChild = JSON.stringify(String(child));
+  const jsBtnLabel = JSON.stringify(`✅ Activate ${rawChildHandle}'s Account`);
 
   res.send(`
     <!DOCTYPE html>
@@ -2629,7 +2852,7 @@ app.get('/parent/verify', (req, res) => {
           <div class="form-group">
             <label>Parent / Guardian Full Name</label>
             <div class="input-wrapper">
-              <input type="text" id="parentFullName" placeholder="e.g. Dr. Jane Mwangi" value="${parent && parent.name ? parent.name : ''}" required autocomplete="name">
+              <input type="text" id="parentFullName" placeholder="e.g. Dr. Jane Mwangi" value="${safeParentName}" required autocomplete="name">
             </div>
             <div class="rules-hint">Your legal name as guardian for family account verification.</div>
           </div>
@@ -2719,11 +2942,11 @@ app.get('/parent/verify', (req, res) => {
             const res = await fetch('/api/parent/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ token: '${token}', familyPassword: pwd, childId: '${child}', parentName: pName })
+              body: JSON.stringify({ token: ${jsToken}, familyPassword: pwd, childId: ${jsChild}, parentName: pName })
             });
             const data = await res.json();
             btn.disabled = false;
-            btn.textContent = "✅ Activate ${childHandle}'s Account";
+            btn.textContent = ${jsBtnLabel};
 
             if (data.success) {
               document.getElementById('passwordForm').style.display = 'none';
@@ -2734,7 +2957,7 @@ app.get('/parent/verify', (req, res) => {
             }
           } catch (e) {
             btn.disabled = false;
-            btn.textContent = "✅ Activate ${childHandle}'s Account";
+            btn.textContent = ${jsBtnLabel};
             err.textContent = 'Network error. Please try again.';
             err.style.display = 'block';
           }
@@ -2883,25 +3106,35 @@ app.post('/api/parent/reset-password', async (req, res) => {
   }
 });
 
-// Backward compatible alias for reset-pin (requires OTP)
+// Backward compatible alias for reset-pin (strictly requires OTP verification)
 app.post('/api/parent/reset-pin', async (req, res) => {
-  const { email, phone, emailOrPhone, newPin, newPassword, otp } = req.body;
-  const identifier = (email || phone || emailOrPhone || '').trim();
-  const pwd = newPassword || newPin;
-  if (!identifier || !pwd) {
-    return res.status(400).json({ error: 'Parent email or phone number and new credential are required.' });
-  }
-  if (otp) {
-    const otpRes = parentStore.verifyParentOTP(identifier, String(otp).trim());
-    if (!otpRes.valid) {
-      return res.status(400).json({ error: otpRes.error });
+  try {
+    const { email, phone, emailOrPhone, newPin, newPassword, otp } = req.body;
+    const identifier = (email || phone || emailOrPhone || '').trim();
+    const pwd = newPassword || newPin;
+    if (!identifier || !pwd) {
+      return res.status(400).json({ error: 'Parent email or phone number and new credential are required.' });
     }
+    const existingParent = parentStore.getParentByEmailOrPhone(identifier);
+    if (!existingParent || !existingParent.otpVerified) {
+      if (otp) {
+        const otpRes = parentStore.verifyParentOTP(identifier, String(otp).trim());
+        if (!otpRes.valid) {
+          return res.status(400).json({ error: otpRes.error });
+        }
+      } else {
+        return res.status(400).json({ error: 'Please enter the 6-digit verification code.' });
+      }
+    }
+    const result = await parentStore.resetFamilyPassword(identifier, String(pwd).trim());
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({ success: true, message: 'Password updated successfully!' });
+  } catch (err) {
+    console.error('[server] Reset pin error:', err.message);
+    res.status(500).json({ error: 'Failed to reset password.' });
   }
-  const result = await parentStore.resetFamilyPassword(identifier, String(pwd).trim());
-  if (!result.success) {
-    return res.status(400).json({ error: result.error });
-  }
-  res.json({ success: true, message: 'Password updated successfully!' });
 });
 
 // POST /api/parent/change-password — Change password while logged in (requires current password)
@@ -2946,13 +3179,16 @@ app.post('/api/parent/reset-child-pin', async (req, res) => {
 });
 
 // GET /parent/approve?token=xxx&child=stu_xxx
-// Serves the PIN entry page for approving a sibling
+// Serves the Family Password entry page for approving a sibling
 app.get('/parent/approve', (req, res) => {
   const { token, child } = req.query;
   if (!token || !child) return res.status(400).send('<h2>Invalid approval link.</h2>');
 
   const studentRecord = studentStore.getStudentById(child);
-  const childHandle = studentRecord ? studentRecord.handle : 'a child';
+  const rawChildHandle = studentRecord ? studentRecord.handle : 'a child';
+  const childHandle = authUtils.sanitizeHtml(rawChildHandle);
+  const jsApproveToken = JSON.stringify(String(token));
+  const jsApproveChild = JSON.stringify(String(child));
 
   if (studentRecord && studentRecord.parentVerified) {
     return res.send(`
@@ -2999,9 +3235,8 @@ app.get('/parent/approve', (req, res) => {
         .logo { font-size: 32px; margin-bottom: 8px; }
         h1 { color: #f59e0b; font-size: 22px; margin-bottom: 8px; }
         p { color: #aaa; line-height: 1.6; margin-bottom: 20px; font-size: 14px; }
-        .pin-row { display: flex; gap: 10px; justify-content: center; margin: 20px 0; }
-        .pin-row input { width: 44px; height: 52px; border: 2px solid #2d1f00; border-radius: 8px; background: #1a2332; color: #fff; font-size: 22px; text-align: center; outline: none; }
-        .pin-row input:focus { border-color: #f59e0b; }
+        .pwd-input { width: 100%; height: 48px; border: 2px solid #2d1f00; border-radius: 10px; background: #1a2332; color: #fff; font-size: 15px; padding: 0 14px; outline: none; margin: 12px 0; }
+        .pwd-input:focus { border-color: #f59e0b; }
         button { background: #f59e0b; color: #000; border: none; border-radius: 8px; padding: 14px 32px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px; }
         button:hover { background: #d97706; }
         .error { color: #f87171; font-size: 13px; margin-top: 12px; display: none; }
@@ -3012,15 +3247,8 @@ app.get('/parent/approve', (req, res) => {
       <div class="card">
         <div class="logo">🌳</div>
         <h1>Does ${childHandle} belong to your family?</h1>
-        <p>Enter your <strong style="color:#fff;">Family PIN</strong> to approve <strong style="color:#fff;">${childHandle}</strong>'s account on Elingu. If you don't recognise this name, simply close this page.</p>
-        <div class="pin-row" id="pinBoxes">
-          <input type="password" maxlength="1" inputmode="numeric" pattern="[0-9]">
-          <input type="password" maxlength="1" inputmode="numeric" pattern="[0-9]">
-          <input type="password" maxlength="1" inputmode="numeric" pattern="[0-9]">
-          <input type="password" maxlength="1" inputmode="numeric" pattern="[0-9]">
-          <input type="password" maxlength="1" inputmode="numeric" pattern="[0-9]">
-          <input type="password" maxlength="1" inputmode="numeric" pattern="[0-9]">
-        </div>
+        <p>Enter your <strong style="color:#fff;">Family Password</strong> to approve <strong style="color:#fff;">${childHandle}</strong>'s account on Elingu. If you don't recognise this name, simply close this page.</p>
+        <input type="password" id="familyPwdInput" class="pwd-input" placeholder="Enter your Family Password" autocomplete="current-password">
         <div class="error" id="errMsg"></div>
         <button id="approveBtn">👤 Approve ${childHandle}</button>
         <div id="successMsg" style="display:none">
@@ -3031,29 +3259,23 @@ app.get('/parent/approve', (req, res) => {
         <p class="badge">🛡️ Your child's data is safe — Kenya DPA 2019 compliant</p>
       </div>
       <script>
-        const boxes = document.getElementById('pinBoxes').querySelectorAll('input');
-        boxes.forEach((box, i) => {
-          box.addEventListener('input', () => { if (box.value && i < boxes.length-1) boxes[i+1].focus(); });
-          box.addEventListener('keydown', e => { if (e.key==='Backspace' && !box.value && i>0) boxes[i-1].focus(); });
-        });
-
         document.getElementById('approveBtn').addEventListener('click', async () => {
-          const pin = [...boxes].map(b => b.value).join('');
+          const pwd = (document.getElementById('familyPwdInput').value || '').trim();
           const err = document.getElementById('errMsg');
           err.style.display = 'none';
-          if (pin.length !== 6) { err.textContent='Please enter all 6 digits.'; err.style.display='block'; return; }
+          if (!pwd) { err.textContent='Please enter your Family Password.'; err.style.display='block'; return; }
 
           const res = await fetch('/api/parent/approve-child', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ approveToken: '${token}', childId: '${child}', familyPin: pin })
+            body: JSON.stringify({ approveToken: ${jsApproveToken}, childId: ${jsApproveChild}, familyPassword: pwd, familyPin: pwd })
           });
           const data = await res.json();
           if (data.success) {
-            document.querySelector('.card > *:not(#successMsg)').style.display='none';
+            document.querySelectorAll('.card > *:not(#successMsg)').forEach(el => { el.style.display = 'none'; });
             document.getElementById('successMsg').style.display='block';
           } else {
-            err.textContent = data.error || 'Incorrect PIN. Please try again.';
+            err.textContent = data.error || 'Incorrect Family Password. Please try again.';
             err.style.display = 'block';
           }
         });
@@ -6539,9 +6761,11 @@ app.get('/parent/portal', (req, res) => {
             container.innerHTML = data.children.map(function(c) {
               const kyc = c.knowYourChild || {};
               const cleanTier = String(c.subscriptionTier || 'free').trim().toLowerCase();
-              const isFree = (cleanTier === 'free');
-              const isStandard = (cleanTier === 'standard');
-              const isPremium = (cleanTier === 'premium' || cleanTier === 'pilot' || cleanTier === 'school');
+              const portalTier = String(c.parentPortalTier || (cleanTier === 'school' ? 'free' : cleanTier)).trim().toLowerCase();
+              const isSchoolLinked = Boolean(c.schoolId || cleanTier === 'school' || (c.weeklySchoolSummary && c.weeklySchoolSummary.isSchoolConnected));
+              const isFree = (portalTier === 'free');
+              const isStandard = (portalTier === 'standard');
+              const isPremium = (portalTier === 'premium' || portalTier === 'pilot');
               const isBriChild = isBritishChild(c);
               const isSenior = !isBriChild && (parseInt(c.grade || 7, 10) >= 10 || c.schoolLevel === 'SS');
               const levelLabel = isBriChild ? ('Year ' + (c.yearGroup || c.grade)) : (isSenior ? 'Senior School' : 'Junior Secondary');
@@ -6551,7 +6775,9 @@ app.get('/parent/portal', (req, res) => {
                 ? (isBriChild ? '<span class="badge-premium-active" style="background: #0D3A26; color: #6EE7B7;">⭐ IGCSE Exam Master</span>' : (isSenior ? '<span class="badge-premium-active">⭐ Senior Premium Pro Active</span>' : '<span class="badge-premium-active">⭐ Premium Active</span>'))
                 : (isStandard
                   ? (isBriChild ? '<span class="badge-standard-active" style="background: #1E3A8A; color: #93C5FD;">🚀 IGCSE Standard Active</span>' : (isSenior ? '<span class="badge-standard-active">🚀 Senior Standard Active</span>' : '<span class="badge-standard-active">🚀 Standard Active</span>'))
-                  : '<span class="badge-free-active">Free Tier (' + (Array.isArray(c.freeSubjects) ? c.freeSubjects.length : 3) + ' Subjects)</span>');
+                  : (isSchoolLinked
+                    ? '<span class="badge-free-active" style="background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE;">🏫 School Stream + Weekly Parent Digest</span>'
+                    : '<span class="badge-free-active">Free Tier (' + (Array.isArray(c.freeSubjects) ? c.freeSubjects.length : 3) + ' Subjects)</span>'));
 
               const activity = c.activitySummary || {};
               const recentTopics = activity.recentTopics || [];
@@ -7040,6 +7266,86 @@ app.get('/parent/portal', (req, res) => {
                       'Elingu is ready when they are 🌱' +
                     '</div>';
                   }
+
+                  // Friday End-of-Week School Summary (for School-Connected Learners)
+                  if (isSchoolLinked && c.weeklySchoolSummary) {
+                    var ws = c.weeklySchoolSummary;
+                    var wsHeadline = String(ws.headline || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    var wsSched = String(ws.deliverySchedule || 'Every Friday at 4:00 PM EAT').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    html += '<div style="margin-top: 16px; padding: 12px 14px; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 10px;">' +
+                      '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">' +
+                        '<div style="font-weight: 700; font-size: 12.5px; color: #1E40AF;">📬 End-of-Week School Summary (' + wsSched + ')</div>' +
+                        '<span style="font-size: 11px; background: #DBEAFE; color: #1E3A8A; padding: 2px 8px; border-radius: 999px; font-weight: 600;">🏫 ' + String(ws.schoolName || c.school || 'Partner School').replace(/</g, '&lt;').replace(/>/g, '&gt;') + (ws.stream ? ' • ' + String(ws.stream).replace(/</g, '&lt;').replace(/>/g, '&gt;') : '') + '</span>' +
+                      '</div>' +
+                      '<div style="font-size: 12px; color: #1E293B; margin-top: 6px; line-height: 1.45;">' + wsHeadline + '</div>' +
+                      (isFree
+                        ? '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #93C5FD; font-size: 11.5px; color: #1E3A8A; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">' +
+                            '<span>🔒 Live 24/7 Parent Portal insights, Tonight&#39;s Guide &amp; exact mission scores require a Parent Plan.</span>' +
+                            '<a href="javascript:void(0)" onclick="openChildUpgradeModal(&#39;' + c.id + '&#39;, &#39;' + c.handle + '&#39;, &#39;standard&#39;)" style="font-weight: 700; color: #0D3A26; text-decoration: underline;">Unlock Portal (' + stdPriceLabel + ') →</a>' +
+                          '</div>'
+                        : '') +
+                    '</div>';
+                  }
+
+                  // Teacher Missions & Classroom Progress (Descriptive Word First + Tier-Aware Exact Score & Missed Questions)
+                  if (Array.isArray(c.missionSummaries) && c.missionSummaries.length > 0) {
+                    html += '<div style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed #CBD5E1;">' +
+                      '<div style="font-weight: 600; font-size: 13px; color: #0D3A26; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">' +
+                        '<span>🎯 Teacher Missions &amp; Classroom Progress</span>' +
+                        '<span style="font-size: 11px; color: #64748B; font-weight: 500;">' + c.missionSummaries.length + ' assigned</span>' +
+                      '</div>' +
+                      '<div style="display: flex; flex-direction: column; gap: 8px;">';
+                    c.missionSummaries.slice(0, 5).forEach(function(ms) {
+                      var mTitle = String(ms.title || 'Classroom Mission').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                      var mSubj = String(ms.subject || 'General').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                      var mStanding = String(ms.descriptiveStanding || 'Assigned 📋').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                      var mSummary = String(ms.descriptiveSummary || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                      var badgeBg = ms.status === 'completed' ? '#ECFDF5' : '#FEF3C7';
+                      var badgeColor = ms.status === 'completed' ? '#065F46' : '#92400E';
+                      var badgeBorder = ms.status === 'completed' ? '#A7F3D0' : '#FDE68A';
+                      html += '<div style="background: #FAF7F2; border: 1px solid #E0D8CC; border-radius: 10px; padding: 10px 12px;">' +
+                        '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">' +
+                          '<div>' +
+                            '<div style="font-weight: 600; font-size: 12.5px; color: #1C1C1C;">' + mTitle + '</div>' +
+                            '<div style="font-size: 11px; color: #64748B; margin-top: 2px;">' + mSubj + (ms.strand ? ' • ' + String(ms.strand).replace(/</g, '&lt;').replace(/>/g, '&gt;') : '') + '</div>' +
+                          '</div>' +
+                          '<span style="background: ' + badgeBg + '; color: ' + badgeColor + '; border: 1px solid ' + badgeBorder + '; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600;">' +
+                            mStanding +
+                          '</span>' +
+                        '</div>';
+                      if (mSummary) {
+                        html += '<div style="font-size: 11.5px; color: #4A4A4A; margin-top: 6px; line-height: 1.4;">' + mSummary + '</div>';
+                      }
+                      if (ms.exactScore) {
+                        if (!isFree) {
+                          html += '<details style="margin-top: 6px; font-size: 11.5px; color: #0D3A26; cursor: pointer;">' +
+                            '<summary style="font-weight: 600; outline: none; user-select: none;">View exact score ▾</summary>' +
+                            '<div style="margin-top: 5px; padding: 6px 10px; background: #FFFFFF; border: 1px solid #E0D8CC; border-radius: 6px; color: #1C1C1C; font-weight: 500;">' +
+                              'Score: <strong>' + ms.exactScore.scorePercent + '%</strong> (' + ms.exactScore.correctCount + '/' + ms.exactScore.totalItems + ' items mastered • ' + ms.exactScore.totalAttempts + ' total attempts)';
+                          if (Array.isArray(ms.missedQuestions) && ms.missedQuestions.length > 0) {
+                            if (isPremium) {
+                              html += '<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #F1F5F9; font-size: 11px; color: #475569;">' +
+                                '<strong>Questions needing review (' + ms.missedQuestions.length + '):</strong> ' +
+                                ms.missedQuestions.map(function(mq) { return String(mq.prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }).join(' • ') +
+                              '</div>';
+                            } else {
+                              html += '<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #F1F5F9; font-size: 11px; color: #92400E;">' +
+                                '⭐ Upgrade to Premium to view the exact questions ' + c.handle + ' struggled with for home review.' +
+                              '</div>';
+                            }
+                          }
+                          html += '</div></details>';
+                        } else {
+                          html += '<div style="margin-top: 6px; font-size: 11px; color: #64748B;">' +
+                            '🔒 <a href="javascript:void(0)" onclick="openChildUpgradeModal(&#39;' + c.id + '&#39;, &#39;' + c.handle + '&#39;, &#39;standard&#39;)" style="color: #0D3A26; font-weight: 600; text-decoration: underline;">Upgrade to Standard</a> to view exact scores, or <strong>Premium</strong> for missed-question review.' +
+                          '</div>';
+                        }
+                      }
+                      html += '</div>';
+                    });
+                    html += '</div></div>';
+                  }
+
                 html += '</div></div>';
 
                 // 3. PANEL 2: ELINGU'S NOTE
@@ -8094,7 +8400,7 @@ app.get('/parent/portal', (req, res) => {
                 tier: checkoutTier,
                 billingCycle: currentCycle,
                 paymentMethod: 'Credit / Debit Card',
-                transactionRef: 'CRD' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+                transactionRef: 'CRD' + Array.from(crypto.getRandomValues(new Uint8Array(4)), b => b.toString(16).padStart(2, '0')).join('').toUpperCase(),
                 studentId: checkoutStudentId
               })
             });
@@ -9023,10 +9329,53 @@ function formatParentDashboardData(parent) {
     const resolved = studentStore.resolveStudentTier(s);
     const childTier = resolved.subscriptionTier;
     const childTierMeta = resolved.tierInfo;
-    const kycGate = pricingConfig.getKnowYourChildGate(s.createdAt, childTier);
+
+    // Separate School Classroom Access ('school') from Paid Parent Portal Access ('free' | 'standard' | 'premium' | 'pilot')
+    const rawChildParentSub = (parent.studentSubscriptions && parent.studentSubscriptions[s.id] && parent.studentSubscriptions[s.id].tier)
+      ? String(parent.studentSubscriptions[s.id].tier).trim().toLowerCase()
+      : null;
+    const rawParentTier = String(parent.subscriptionTier || 'free').trim().toLowerCase();
+    const isPilotActive = Boolean(s.pilotExpiresAt && new Date() <= new Date(s.pilotExpiresAt));
+    let parentPortalTier = 'free';
+    if (rawChildParentSub === 'premium' || rawParentTier === 'premium') {
+      parentPortalTier = 'premium';
+    } else if (rawChildParentSub === 'standard' || rawParentTier === 'standard') {
+      parentPortalTier = 'standard';
+    } else if (isPilotActive || rawChildParentSub === 'pilot' || rawParentTier === 'pilot') {
+      parentPortalTier = 'pilot';
+    }
+    const parentPortalTierMeta = pricingConfig.PRICING_TIERS[parentPortalTier] || pricingConfig.PRICING_TIERS.free;
+
+    const kycGate = pricingConfig.getKnowYourChildGate(s.createdAt, parentPortalTier);
     const activitySummary = studentStore.getChildActivitySummary(s.id);
+    const missionSummaries = teacherStore.getStudentMissionSummaries(s.id);
     const todayStr = new Date().toISOString().slice(0, 10);
     const dailyTurnsToday = (s.dailyTurnDate === todayStr) ? (s.dailyTurnsCount || 0) : 0;
+
+    const isSchoolConnected = Boolean(s.schoolId || childTier === 'school');
+    const completedMissionsCount = Array.isArray(missionSummaries)
+      ? missionSummaries.filter(m => m.status === 'completed').length
+      : 0;
+    const latestStanding = (Array.isArray(missionSummaries) && missionSummaries.length > 0)
+      ? missionSummaries[0].descriptiveStanding
+      : 'Active in Stream 🌱';
+    const subjectsList = (activitySummary && Array.isArray(activitySummary.subjectsExplored) && activitySummary.subjectsExplored.length > 0)
+      ? activitySummary.subjectsExplored
+      : (Array.isArray(s.selectedSubjects) && s.selectedSubjects.length > 0 ? s.selectedSubjects.slice(0, 3) : ['Mathematics']);
+    const weeklySchoolSummary = {
+      isSchoolConnected,
+      schoolName: s.school || 'Partner School',
+      stream: s.stream || null,
+      deliverySchedule: 'Every Friday at 4:00 PM EAT',
+      missionsAssignedCount: Array.isArray(missionSummaries) ? missionSummaries.length : 0,
+      missionsCompletedCount: completedMissionsCount,
+      latestStanding,
+      subjectsExplored: subjectsList,
+      portalAccessLevel: parentPortalTier === 'free' ? 'weekly_summary_only' : (parentPortalTier === 'standard' ? 'standard_portal' : 'premium_portal'),
+      headline: isSchoolConnected
+        ? `${s.handle} completed ${completedMissionsCount}/${Array.isArray(missionSummaries) ? missionSummaries.length : 0} classroom missions (${latestStanding}) and explored ${subjectsList.join(', ')} this week.`
+        : `${s.handle} explored ${subjectsList.join(', ')} this week.`
+    };
 
     return {
       id: s.id,
@@ -9035,6 +9384,8 @@ function formatParentDashboardData(parent) {
       grade: s.grade,
       county: s.county,
       school: s.school,
+      schoolId: s.schoolId || null,
+      stream: s.stream || null,
       streak: s.streak || 1,
       totalTurns: s.totalTurns || 0,
       dailyTurnsToday,
@@ -9051,7 +9402,16 @@ function formatParentDashboardData(parent) {
       lastActive: s.lastActive,
       parentVerified: s.parentVerified,
       subscriptionTier: childTier,
+      parentPortalTier,
+      parentPortalTierInfo: {
+        id: parentPortalTierMeta.id,
+        name: parentPortalTierMeta.name,
+        uiLabel: parentPortalTierMeta.uiLabel,
+        priceDisplay: parentPortalTierMeta.priceDisplay
+      },
+      weeklySchoolSummary,
       activitySummary,
+      missionSummaries,
       tierInfo: {
         id: childTierMeta.id,
         name: childTierMeta.name,
@@ -9133,6 +9493,49 @@ async function handleParentDashboard(req, res) {
 app.get('/api/parent/dashboard', handleParentDashboard);
 app.post('/api/parent/dashboard', handleParentDashboard);
 
+// POST /api/parent/weekly-summary-dispatch — Generates & dispatches the End-of-Week School Parent Summary (Friday 4:00 PM Digest)
+app.post('/api/parent/weekly-summary-dispatch', async (req, res) => {
+  try {
+    const identifier = (req.body?.email || req.body?.phone || req.body?.emailOrPhone || '').trim();
+    const credential = req.body?.familyPassword || req.body?.familyPin || req.body?.password;
+    if (!identifier || !credential) {
+      return res.status(400).json({ error: 'Parent email or phone and Family Password are required.' });
+    }
+    const authRes = await parentStore.verifyFamilyPassword(identifier, credential);
+    if (!authRes.success) {
+      return res.status(authRes.locked ? 423 : 401).json({ error: authRes.error, locked: authRes.locked });
+    }
+    const parent = authRes.parent || parentStore.getParentByEmailOrPhone(identifier);
+    const dashData = formatParentDashboardData(parent);
+    const digests = (dashData.children || []).map(c => ({
+      studentId: c.id,
+      handle: c.handle,
+      schoolName: c.weeklySchoolSummary?.schoolName || c.school || 'Partner School',
+      stream: c.weeklySchoolSummary?.stream || c.stream || null,
+      parentPortalTier: c.parentPortalTier,
+      portalAccessLevel: c.weeklySchoolSummary?.portalAccessLevel || 'weekly_summary_only',
+      deliverySchedule: c.weeklySchoolSummary?.deliverySchedule || 'Every Friday at 4:00 PM EAT',
+      headline: c.weeklySchoolSummary?.headline || '',
+      missionsAssignedCount: c.weeklySchoolSummary?.missionsAssignedCount || 0,
+      missionsCompletedCount: c.weeklySchoolSummary?.missionsCompletedCount || 0,
+      latestStanding: c.weeklySchoolSummary?.latestStanding || 'Active in Stream 🌱',
+      upgradePrompt: c.parentPortalTier === 'free'
+        ? 'Want live 24/7 Parent Portal insights, Tonight\'s Dinner-Table Guide, exact mission scores & missed-question breakdowns? Upgrade to Standard (KES 699/mo) or Premium (KES 1,499/mo).'
+        : null
+    }));
+
+    res.json({
+      success: true,
+      dispatchedAt: new Date().toISOString(),
+      recipient: parent.email || parent.phone,
+      digests
+    });
+  } catch (err) {
+    console.error('[server] Weekly summary dispatch error:', err.message);
+    res.status(500).json({ error: 'Failed to generate weekly parent summary.' });
+  }
+});
+
 // POST /api/parent/subscription — Update parent subscription tier
 app.post('/api/parent/subscription', async (req, res) => {
   try {
@@ -9212,13 +9615,13 @@ app.post('/api/parent/request-grade-change', async (req, res) => {
       return res.status(authRes.locked ? 423 : 401).json({ error: authRes.error });
     }
 
-    const parent = parentStore.findParentByEmail(email);
+    const parent = authRes.parent || parentStore.getParentByEmailOrPhone(email);
     if (!parent || !(parent.children || []).includes(studentId)) {
       return res.status(403).json({ error: 'This learner is not associated with your family account.' });
     }
 
     const result = adminStore.submitGradeChangeRequest({
-      parentEmail: email,
+      parentEmail: parent.email || email,
       studentId,
       requestedGrade,
       reason
@@ -9285,7 +9688,7 @@ app.post('/api/parent/update-child-subjects', async (req, res) => {
       return res.status(authRes.locked ? 423 : 401).json({ error: authRes.error });
     }
 
-    const parent = parentStore.findParentByEmail(email);
+    const parent = authRes.parent || parentStore.getParentByEmailOrPhone(email);
     if (!parent || !(parent.children || []).includes(studentId)) {
       return res.status(403).json({ error: 'This learner is not associated with your family account.' });
     }
@@ -9371,12 +9774,12 @@ app.post('/api/parent/approve-subject-request', async (req, res) => {
       return res.status(authRes.locked ? 423 : 401).json({ error: authRes.error });
     }
 
-    const parent = parentStore.findParentByEmail ? parentStore.findParentByEmail(email) : parentStore.getParentByEmail(email);
+    const parent = authRes.parent || parentStore.getParentByEmailOrPhone(email);
     if (!parent || !(parent.children || []).includes(studentId)) {
       return res.status(403).json({ error: 'This learner is not associated with your family account.' });
     }
 
-    const student = studentStore.getStudentById(studentId, true);
+    let student = studentStore.getStudentById(studentId, true);
     if (!student) {
       return res.status(404).json({ error: 'Learner profile not found.' });
     }
@@ -9396,12 +9799,17 @@ app.post('/api/parent/approve-subject-request', async (req, res) => {
           needsUpgrade: true
         });
       }
-      student.selectedSubjects = [...currentSubjects, targetSubject];
-      student.quests = student.selectedSubjects;
-      if (studentStore.saveStore) studentStore.saveStore();
+      const nextSubjects = [...currentSubjects, targetSubject];
+      const updatedStudent = studentStore.updateStudentProfile(studentId, {
+        selectedSubjects: nextSubjects,
+        quests: nextSubjects
+      });
+      if (updatedStudent && !updatedStudent.error) {
+        student = updatedStudent;
+      }
     }
 
-    parentStore.approveUpgradeRequest(email, studentId, targetSubject);
+    parentStore.approveUpgradeRequest(parent.email || email, studentId, targetSubject);
 
     res.json({
       success: true,

@@ -10335,7 +10335,11 @@
         }
 
         // Asynchronously populate counties & schools dropdowns in background without blocking UI
-        fetch('/api/students/profiles')
+        const initProfUrl = activeStudent && activeStudent.id
+          ? `/api/students/profiles?studentId=${encodeURIComponent(activeStudent.id)}`
+          : '/api/students/profiles';
+        const stuTok = sessionStorage.getItem('elingu_student_token');
+        fetch(initProfUrl, stuTok ? { headers: { 'Authorization': `Bearer ${stuTok}` } } : {})
           .then(res => res.json())
           .then(data => {
             const customCountySelect = document.getElementById('customCountySelect');
@@ -11240,7 +11244,11 @@
       listEl.innerHTML = '<p style="font-size:0.9rem; color:#475569;">Loading learners...</p>';
 
       try {
-        const res = await fetch('/api/students/profiles');
+        const listUrl = activeStudent && activeStudent.id
+          ? `/api/students/profiles?studentId=${encodeURIComponent(activeStudent.id)}`
+          : '/api/students/profiles';
+        const stuTok = sessionStorage.getItem('elingu_student_token');
+        const res = await fetch(listUrl, stuTok ? { headers: { 'Authorization': `Bearer ${stuTok}` } } : {});
         const data = await res.json();
         const students = data.students || [];
 
@@ -11295,6 +11303,9 @@
 
         if (data.success && data.student) {
           isLockedOut = false;
+          if (data.token) {
+            sessionStorage.setItem('elingu_student_token', data.token);
+          }
           activeStudent = normalizeActiveStudent(data.student);
           localStorage.setItem('elingu_active_student', JSON.stringify(activeStudent));
           updateStudentUI();
@@ -11304,7 +11315,10 @@
           if (closeBtn) closeBtn.style.display = 'flex';
           closeStudentModal();
         } else if (data.success) {
-          const profRes = await fetch(`/api/students/profile?studentId=${encodeURIComponent(pendingSwitchStudentId)}`);
+          if (data.token) {
+            sessionStorage.setItem('elingu_student_token', data.token);
+          }
+          const profRes = await fetch(`/api/students/profile?studentId=${encodeURIComponent(pendingSwitchStudentId)}`, data.token ? { headers: { 'Authorization': `Bearer ${data.token}` } } : {});
           const profData = await profRes.json();
           if (profData && profData.student) {
             isLockedOut = false;
@@ -12972,9 +12986,13 @@
       ];
 
       try {
+        const stuTok = sessionStorage.getItem('elingu_student_token');
         const res = await fetch('/api/students/profile', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(stuTok ? { 'Authorization': `Bearer ${stuTok}` } : {})
+          },
           body: JSON.stringify({
             studentId: activeStudent.id,
             handle: handle,

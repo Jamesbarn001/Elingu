@@ -32,7 +32,7 @@ function loadJson(filePath, defaultValue = {}) {
 
 function saveJson(filePath, data) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    authUtils.atomicWriteJsonSync(filePath, data);
     require('./persistentStore').persist(filePath, data);
   } catch (err) {
     console.error(`[parentStore] Error saving ${filePath}:`, err.message);
@@ -758,7 +758,7 @@ function completePendingPayment(checkoutRequestIdOrRef, metadata = {}) {
   return payment;
 }
 
-// DPA Sec 40 Right to Erasure — Parent-authenticated child data erasure
+// DPA Sec 40 Right to Erasure — Parent-authenticated child data erasure (with 30-day safety retention vault)
 async function purgeChildData(parentEmailOrPhone, childId) {
   const store = loadJson(PARENTS_FILE, { parents: [] });
   const parent = findParentInStore(store, parentEmailOrPhone);
@@ -766,6 +766,15 @@ async function purgeChildData(parentEmailOrPhone, childId) {
   if (!parent.children || !parent.children.includes(childId)) {
     return { success: false, error: 'Child is not linked to this family account.' };
   }
+
+  // 0. Archive for 30-day recovery & safety retention before active removal
+  let archived = null;
+  try {
+    const studentStore = require('./studentStore');
+    if (studentStore.archiveSoftDeletedAccount) {
+      archived = studentStore.archiveSoftDeletedAccount(childId, 'parent');
+    }
+  } catch (e) {}
 
   // 1. Remove child from parent account
   parent.children = parent.children.filter(id => id !== childId);
@@ -791,11 +800,36 @@ async function purgeChildData(parentEmailOrPhone, childId) {
   });
   saveJson(sessionsFile, sessions);
 
-  return { success: true, message: 'Child learning records, streaks, and sessions permanently erased.' };
+  // 4. Purge any mission submissions for this child
+  const missionsFile = path.join(DATA_DIR, 'missions.json');
+  const missionsStore = loadJson(missionsFile, { missions: [], submissions: {} });
+  let missionsChanged = false;
+  if (missionsStore.submissions && missionsStore.submissions[childId]) {
+    delete missionsStore.submissions[childId];
+    missionsChanged = true;
+  }
+  (missionsStore.missions || []).forEach(m => {
+    if (m.submissions && m.submissions[childId]) {
+      delete m.submissions[childId];
+      missionsChanged = true;
+    }
+  });
+  if (missionsChanged) {
+    saveJson(missionsFile, missionsStore);
+  }
+
+  return {
+    success: true,
+    softDeleted: true,
+    retentionDays: 30,
+    scheduledPermanentPurgeAt: archived ? archived.scheduledPermanentPurgeAt : null,
+    message: 'Child account deactivated and scheduled for permanent erasure after the 30-day safety retention window.'
+  };
 }
 
 module.exports = {
   getParentByEmail,
+  findParentByEmail: getParentByEmail,
   getParentByPhone,
   getParentByEmailOrPhone,
   getParentByToken,

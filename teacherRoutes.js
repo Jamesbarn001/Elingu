@@ -733,12 +733,15 @@ module.exports = function (options = {}) {
       return res.json({
         type: 'admin',
         valid: true,
+        approvalStatus: adminSchool.approvalStatus || 'approved',
+        isApproved: teacherStore.isSchoolApproved(adminSchool),
         school: {
           id: adminSchool.id,
           name: adminSchool.name,
           county: adminSchool.county,
           grades: adminSchool.grades,
           streams: adminSchool.streams,
+          approvalStatus: adminSchool.approvalStatus || 'approved',
           curriculum: adminSchool.curriculum || (teacherStore.isSchoolBritish(adminSchool) ? 'BRITISH' : 'CBC'),
           examBoard: adminSchool.examBoard || null
         }
@@ -750,6 +753,8 @@ module.exports = function (options = {}) {
       return res.json({
         type: 'stream',
         valid: true,
+        approvalStatus: streamInfo.school?.approvalStatus || 'approved',
+        isApproved: teacherStore.isSchoolApproved(streamInfo.school),
         schoolName: streamInfo.schoolName,
         schoolId: streamInfo.schoolId,
         grade: streamInfo.grade,
@@ -785,7 +790,20 @@ module.exports = function (options = {}) {
   router.get('/api/school/:schoolId', (req, res) => {
     const school = teacherStore.getSchoolById(req.params.schoolId);
     if (!school) return res.status(404).json({ error: 'School not found.' });
-    res.json({ success: true, school });
+
+    const token = req.headers['x-teacher-token'] || (req.headers.authorization && req.headers.authorization.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
+    const verified = token ? authUtils.verifyTeacherToken(token) : null;
+    const isSchoolFaculty = Boolean(verified && verified.schoolId === school.id);
+    const isSchoolAdmin = Boolean(isSchoolFaculty && ['school_admin', 'deputy_headteacher'].includes(verified.role));
+
+    const safeSchool = { ...school };
+    if (!isSchoolAdmin) {
+      delete safeSchool.adminCode;
+    }
+    if (!isSchoolFaculty) {
+      delete safeSchool.joinCodes;
+    }
+    res.json({ success: true, school: safeSchool });
   });
 
   // POST /api/school/import-students (Bulk CSV)
@@ -797,6 +815,9 @@ module.exports = function (options = {}) {
       }
       if (req.teacher.schoolId !== schoolId) {
         return res.status(403).json({ error: 'Forbidden: Cannot import students into another school.' });
+      }
+      if (!teacherStore.isSchoolApproved(schoolId)) {
+        return res.status(403).json({ error: 'Forbidden: This school is awaiting Elingu institutional verification. Learner onboarding will unlock once approved.' });
       }
       const result = await studentStore.bulkCreateStudents(students, schoolId, defaults || {});
       res.json({
@@ -828,6 +849,11 @@ module.exports = function (options = {}) {
 
       const school = teacherStore.getSchoolByAdminCode(adminCode);
       if (!school) return res.status(404).json({ error: `School admin code "${adminCode}" not found.` });
+      if (!teacherStore.isSchoolApproved(school)) {
+        return res.status(403).json({
+          error: `School "${school.name}" is awaiting Elingu institutional verification. Teacher and student onboarding will unlock as soon as the school is approved.`
+        });
+      }
 
       // Only allow subject_teacher or class_teacher from public registration
       const allowedPublicRoles = ['subject_teacher', 'class_teacher'];
@@ -1503,6 +1529,9 @@ Output format: Return ONLY a valid JSON array of question objects with NO markdo
       if (!schoolId) return res.status(400).json({ error: 'schoolId is required.' });
       if (req.teacher.schoolId !== schoolId) {
         return res.status(403).json({ error: 'Forbidden: Cannot push missions to another school.' });
+      }
+      if (!teacherStore.isSchoolApproved(schoolId)) {
+        return res.status(403).json({ error: 'Forbidden: School registration is awaiting Elingu institutional verification. Classroom mission deployment unlocks once approved.' });
       }
       if (req.teacher.role !== 'school_admin') {
         const cleanG = parseInt(req.body.grade);

@@ -4,6 +4,7 @@
 // ════════════════════════════════════════════════════════════
 
 const https = require('https');
+const crypto = require('crypto');
 const authUtils = require('./authUtils');
 
 const DARAJA_ENV = (process.env.DARAJA_ENVIRONMENT || 'sandbox').toLowerCase();
@@ -13,15 +14,15 @@ const DARAJA_BASE_URL = DARAJA_ENV === 'production'
 
 const CONSUMER_KEY = process.env.DARAJA_CONSUMER_KEY || '';
 const CONSUMER_SECRET = process.env.DARAJA_CONSUMER_SECRET || '';
-const BUSINESS_SHORTCODE = process.env.DARAJA_BUSINESS_SHORTCODE || '174379';
-const PASSKEY = process.env.DARAJA_PASSKEY || 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919';
+const BUSINESS_SHORTCODE = process.env.DARAJA_BUSINESS_SHORTCODE || (DARAJA_ENV === 'production' ? '' : '174379');
+const PASSKEY = process.env.DARAJA_PASSKEY || (DARAJA_ENV === 'production' ? '' : 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919');
 const CALLBACK_URL = process.env.DARAJA_CALLBACK_URL || `${process.env.APP_BASE_URL || 'http://localhost:3000'}/api/payment/mpesa-callback`;
 
 let cachedToken = null;
 let tokenExpiresAt = 0;
 
 async function getDarajaToken() {
-  if (!CONSUMER_KEY || !CONSUMER_SECRET) {
+  if (!CONSUMER_KEY || !CONSUMER_SECRET || !BUSINESS_SHORTCODE || !PASSKEY) {
     return null;
   }
 
@@ -95,8 +96,8 @@ async function initiateSTKPush({ phone, amount, accountReference = 'Elingu', tra
     return {
       success: true,
       simulated: true,
-      checkoutRequestId: 'ws_CO_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6).toUpperCase(),
-      transactionRef: 'MP' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+      checkoutRequestId: 'ws_CO_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex').toUpperCase(),
+      transactionRef: 'MP' + crypto.randomBytes(4).toString('hex').toUpperCase(),
       phone: cleanMsisdn,
       amount,
       currency: 'KES',

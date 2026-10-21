@@ -46,7 +46,7 @@ function loadJson(filePath, defaultValue = {}) {
 
 function saveJson(filePath, data) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    authUtils.atomicWriteJsonSync(filePath, data);
     require('./persistentStore').persist(filePath, data);
   } catch (err) {
     console.error(`Error saving ${filePath}:`, err.message);
@@ -209,7 +209,15 @@ function resolveStudentTier(student) {
   let tier = 'free';
   const childSubTier = parent?.studentSubscriptions?.[student.id]?.tier;
   const parentTier = parent?.subscriptionTier;
-  const studentTier = student?.subscriptionTier;
+  let studentTier = student?.subscriptionTier;
+  if (studentTier === 'school' && student?.schoolId) {
+    try {
+      const teacherStore = require('./teacherStore');
+      if (!teacherStore.isSchoolApproved(student.schoolId)) {
+        studentTier = 'free';
+      }
+    } catch (e) { }
+  }
 
   // Tier hierarchy: premium > school > standard > pilot > free
   const tierRank = { premium: 5, school: 4, standard: 3, pilot: 2, free: 1 };
@@ -345,7 +353,7 @@ function getStudentById(id, includePrivate = false) {
     };
   }
 
-  const { pinHash: _ph, tempPin: _tp, otpHash: _oh, ...safeStudent } = s;
+  const safeStudent = authUtils.sanitizeStudentForClient(s);
   return {
     ...safeStudent,
     curriculum: safeStudent.curriculum || (isBri ? 'BRITISH' : 'CBC'),
@@ -536,6 +544,11 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
     if (!resolved) {
       const err = new Error(`Invalid class stream code "${resolvedStreamJoinCode}". Please ask your teacher for your classroom code (e.g. KUJ-8E) or leave this field blank.`);
       err.code = 'INVALID_STREAM_CODE';
+      throw err;
+    }
+    if (!teacherStore.isSchoolApproved(resolved.school)) {
+      const err = new Error(`School "${resolved.schoolName}" is currently awaiting Elingu verification. Your classroom code will become active as soon as the school is approved.`);
+      err.code = 'SCHOOL_PENDING_APPROVAL';
       throw err;
     }
     resolvedSchoolId = resolved.schoolId;
@@ -1006,7 +1019,7 @@ function updateStudentProfile(id, { grade, county, age, school, avatar, handle, 
   if (handle) {
     student.handle = handle.trim().slice(0, 24);
   }
-  if (email !== undefined) {
+  if (email !== undefined && (!student.parentVerified || !student.email || adminOverride)) {
     student.email = email.trim().toLowerCase().slice(0, 80);
   }
   if (studentEmail !== undefined) {
@@ -1015,7 +1028,7 @@ function updateStudentProfile(id, { grade, county, age, school, avatar, handle, 
   if (studentPhone !== undefined) {
     student.studentPhone = studentPhone ? authUtils.normalizeKenyanPhone(studentPhone) : null;
   }
-  if (points !== undefined && typeof points === 'number') {
+  if (points !== undefined && typeof points === 'number' && adminOverride) {
     student.points = points;
   }
   if (Array.isArray(selectedSubjects)) {
@@ -1086,7 +1099,7 @@ function activateStudentPilot(studentId, accessCode) {
 
   saveJson(STUDENTS_FILE, store);
   const tierData = resolveStudentTier(student);
-  const { pinHash: _ph, tempPin: _tp, otpHash: _oh, ...safeStudent } = student;
+  const safeStudent = authUtils.sanitizeStudentForClient(student);
   return {
     success: true,
     student: {
@@ -1264,9 +1277,19 @@ function awardStudentPoints(studentId, pointsToAdd) {
   const store = loadJson(STUDENTS_FILE, { students: [] });
   const student = store.students.find(s => s.id === studentId);
   if (!student) return 150;
-  student.points = (student.points !== undefined ? student.points : 150) + (pointsToAdd || 0);
+  const safePoints = Math.max(0, Math.min(100, Math.floor(Number(pointsToAdd) || 0)));
+  student.points = (student.points !== undefined ? student.points : 150) + safePoints;
   saveJson(STUDENTS_FILE, store);
   return student.points;
+}
+
+function recordUpgradeRequestTimestamp(studentId, timestamp = Date.now()) {
+  const store = loadJson(STUDENTS_FILE, { students: [] });
+  const student = store.students.find(s => s.id === studentId);
+  if (!student) return false;
+  student.lastUpgradeRequestAt = timestamp;
+  saveJson(STUDENTS_FILE, store);
+  return true;
 }
 
 // Record Pedagogical Signal for Heatmaps & Teacher Dashboards (No verbatim logs)
@@ -1296,19 +1319,121 @@ function recordPedagogicalSignal(studentId, subject, messages) {
   saveJson(ANALYTICS_FILE, analytics);
 }
 
-// Multi-step Confirmed Purge (Right to Erasure - DPA Sec 40)
+const DELETED_ARCHIVE_FILE = path.join(DATA_DIR, 'deleted_accounts_archive.json');
+const SOFT_DELETE_RETENTION_DAYS = 30;
+
+/**
+ * Archive a deleted student account for a 30-day safety & recovery grace period
+ * before permanent purge (Kenya DPA 2019 Sec 40 & child-safety hold).
+ * Note: Safety Watchtower logs in admin.json are never deleted.
+ */
+function archiveSoftDeletedAccount(studentId, initiatedBy = 'student') {
+  try {
+    const store = loadJson(STUDENTS_FILE, { students: [] });
+    const student = (store.students || []).find(s => s.id === studentId);
+    if (!student) return null;
+
+    const sessions = loadJson(SESSIONS_FILE, {});
+    const studentSessions = {};
+    Object.keys(sessions).forEach(key => {
+      if (key.startsWith(`${studentId}_`)) {
+        studentSessions[key] = sessions[key];
+      }
+    });
+
+    const archive = loadJson(DELETED_ARCHIVE_FILE, { archivedAccounts: [] });
+    if (!Array.isArray(archive.archivedAccounts)) archive.archivedAccounts = [];
+
+    const now = Date.now();
+    const entry = {
+      studentId,
+      handle: student.handle,
+      parentEmail: student.email || null,
+      initiatedBy,
+      status: 'soft_deleted_grace_period',
+      deletedAt: new Date(now).toISOString(),
+      scheduledPermanentPurgeAt: new Date(now + SOFT_DELETE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      safetyLogsPreserved: true,
+      studentRecord: student,
+      sessionsSnapshot: studentSessions
+    };
+
+    archive.archivedAccounts = archive.archivedAccounts.filter(a => a.studentId !== studentId);
+    archive.archivedAccounts.unshift(entry);
+    saveJson(DELETED_ARCHIVE_FILE, archive);
+    return entry;
+  } catch (e) {
+    return null;
+  }
+}
+
+function purgeExpiredSoftDeletedAccounts() {
+  try {
+    const archive = loadJson(DELETED_ARCHIVE_FILE, { archivedAccounts: [] });
+    if (!Array.isArray(archive.archivedAccounts) || archive.archivedAccounts.length === 0) return 0;
+    const now = Date.now();
+    const before = archive.archivedAccounts.length;
+    archive.archivedAccounts = archive.archivedAccounts.filter(a => {
+      const exp = new Date(a.scheduledPermanentPurgeAt || 0).getTime();
+      return exp > now;
+    });
+    const purgedCount = before - archive.archivedAccounts.length;
+    if (purgedCount > 0) saveJson(DELETED_ARCHIVE_FILE, archive);
+    return purgedCount;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function restoreSoftDeletedStudent(studentId) {
+  const archive = loadJson(DELETED_ARCHIVE_FILE, { archivedAccounts: [] });
+  const idx = (archive.archivedAccounts || []).findIndex(a => a.studentId === studentId);
+  if (idx === -1) return { success: false, error: 'No recoverable account found within the 30-day retention window.' };
+
+  const entry = archive.archivedAccounts[idx];
+  const store = loadJson(STUDENTS_FILE, { students: [] });
+  if (!store.students.some(s => s.id === studentId)) {
+    store.students.push(entry.studentRecord);
+    saveJson(STUDENTS_FILE, store);
+  }
+
+  if (entry.sessionsSnapshot && Object.keys(entry.sessionsSnapshot).length > 0) {
+    const sessions = loadJson(SESSIONS_FILE, {});
+    Object.assign(sessions, entry.sessionsSnapshot);
+    saveJson(SESSIONS_FILE, sessions);
+  }
+
+  if (entry.parentEmail) {
+    const parentsFile = path.join(DATA_DIR, 'parents.json');
+    const pStore = loadJson(parentsFile, { parents: [] });
+    const parent = (pStore.parents || []).find(p => p.email === entry.parentEmail);
+    if (parent && Array.isArray(parent.children) && !parent.children.includes(studentId)) {
+      parent.children.push(studentId);
+      saveJson(parentsFile, pStore);
+    }
+  }
+
+  archive.archivedAccounts.splice(idx, 1);
+  saveJson(DELETED_ARCHIVE_FILE, archive);
+  return { success: true, student: entry.studentRecord };
+}
+
+// Multi-step Confirmed Purge (Right to Erasure - DPA Sec 40 with 30-day safety retention vault)
 async function purgeStudentData(studentId, pin) {
   const isAuthorized = await verifyStudentPin(studentId, pin);
   if (!isAuthorized) {
     return { success: false, error: 'Invalid PIN. Data erasure aborted.' };
   }
 
-  // 1. Remove student profile
+  // 0. Archive for 30-day recovery & safety retention before active store removal
+  const archived = archiveSoftDeletedAccount(studentId, 'student');
+
+  // 1. Remove student profile from active store
   const store = loadJson(STUDENTS_FILE, { students: [] });
   store.students = store.students.filter(s => s.id !== studentId);
   saveJson(STUDENTS_FILE, store);
 
-  // 2. Remove all session histories for this student
+  // 2. Remove all active session histories for this student
   const sessions = loadJson(SESSIONS_FILE, {});
   Object.keys(sessions).forEach(key => {
     if (key.startsWith(`${studentId}_`)) {
@@ -1317,7 +1442,53 @@ async function purgeStudentData(studentId, pin) {
   });
   saveJson(SESSIONS_FILE, sessions);
 
-  return { success: true, message: 'All student history, streaks, and sessions have been permanently erased.' };
+  // 3. Remove student link from active parent records
+  const parentsFile = path.join(DATA_DIR, 'parents.json');
+  const pStore = loadJson(parentsFile, { parents: [] });
+  let parentsChanged = false;
+  (pStore.parents || []).forEach(p => {
+    if (Array.isArray(p.children) && p.children.includes(studentId)) {
+      p.children = p.children.filter(id => id !== studentId);
+      parentsChanged = true;
+    }
+    if (Array.isArray(p.pendingChildren) && p.pendingChildren.some(c => c.studentId === studentId)) {
+      p.pendingChildren = p.pendingChildren.filter(c => c.studentId !== studentId);
+      parentsChanged = true;
+    }
+    if (p.studentSubscriptions && p.studentSubscriptions[studentId]) {
+      delete p.studentSubscriptions[studentId];
+      parentsChanged = true;
+    }
+  });
+  if (parentsChanged) {
+    saveJson(parentsFile, pStore);
+  }
+
+  // 4. Remove student mission submissions from active missions
+  const missionsFile = path.join(DATA_DIR, 'missions.json');
+  const mStore = loadJson(missionsFile, { missions: [], submissions: {} });
+  let missionsChanged = false;
+  if (mStore.submissions && mStore.submissions[studentId]) {
+    delete mStore.submissions[studentId];
+    missionsChanged = true;
+  }
+  (mStore.missions || []).forEach(m => {
+    if (m.submissions && m.submissions[studentId]) {
+      delete m.submissions[studentId];
+      missionsChanged = true;
+    }
+  });
+  if (missionsChanged) {
+    saveJson(missionsFile, mStore);
+  }
+
+  return {
+    success: true,
+    softDeleted: true,
+    retentionDays: SOFT_DELETE_RETENTION_DAYS,
+    scheduledPermanentPurgeAt: archived ? archived.scheduledPermanentPurgeAt : null,
+    message: 'Account deactivated and scheduled for permanent erasure after the 30-day safety retention window.'
+  };
 }
 
 function removeStudentById(studentId) {
@@ -1557,6 +1728,9 @@ function joinStream(studentId, joinCode) {
   if (!resolved) {
     return { success: false, error: 'Invalid stream code. Please verify the code provided by your teacher (e.g. KUJ-8E).' };
   }
+  if (!teacherStore.isSchoolApproved(resolved.school)) {
+    return { success: false, error: `School "${resolved.schoolName}" is awaiting Elingu institutional verification. Your classroom code will become active once approved.` };
+  }
 
   student.schoolId = resolved.schoolId;
   student.school = resolved.schoolName;
@@ -1632,6 +1806,9 @@ async function bulkCreateStudents(studentRows, schoolId, defaults = {}) {
   const teacherStore = require('./teacherStore');
   const school = teacherStore.getSchoolById(schoolId);
   if (!school) throw new Error('School entity not found.');
+  if (!teacherStore.isSchoolApproved(school)) {
+    throw new Error(`School "${school.name}" is awaiting Elingu institutional verification. Learner onboarding will unlock once approved.`);
+  }
 
   const store = loadJson(STUDENTS_FILE, { students: [] });
   const results = {
@@ -1656,7 +1833,7 @@ async function bulkCreateStudents(studentRows, schoolId, defaults = {}) {
         counter++;
       }
 
-      const grade = [6, 7, 8, 9].includes(parseInt(row.grade)) ? parseInt(row.grade) : (defaults.grade || 7);
+      const grade = [6, 7, 8, 9, 10, 11, 12].includes(parseInt(row.grade)) ? parseInt(row.grade) : (defaults.grade || 7);
       const stream = (row.stream || defaults.stream || 'East').trim();
       const parentContact = (row.parentPhone || row.parentEmail || row.email || '').trim();
       const normPhone = authUtils.normalizeKenyanPhone(parentContact);
@@ -1691,7 +1868,7 @@ async function bulkCreateStudents(studentRows, schoolId, defaults = {}) {
         freeSubjects: ['Mathematics', 'Science & Technology'],
         subscriptionTier: 'school',
         parentConsent: true,
-        parentVerified: false,
+        parentVerified: true,
         pinHash: authUtils.hashCredentialSync(pin),
         createdAt: new Date().toISOString(),
         lastActive: new Date().toISOString(),
@@ -1885,6 +2062,10 @@ module.exports = {
   saveTonightsGuide,
   getStudentTonightsGuide,
   awardStudentPoints,
+  recordUpgradeRequestTimestamp,
+  archiveSoftDeletedAccount,
+  restoreSoftDeletedStudent,
+  purgeExpiredSoftDeletedAccounts,
   isSameContact,
   purgeExpiredUnverifiedStudents,
   isBritishCurriculum,

@@ -120,7 +120,7 @@ function loadJson(filePath, defaultValue = {}) {
 
 function saveJson(filePath, data) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    authUtils.atomicWriteJsonSync(filePath, data);
     require('./persistentStore').persist(filePath, data);
   } catch (err) {
     console.error(`[adminStore] Error saving ${filePath}:`, err.message);
@@ -152,13 +152,16 @@ function initAdminStore() {
   if (!store.safetyLogs) store.safetyLogs = [];
   if (!store.settings) store.settings = defaultData.settings;
 
-  // Seed founder superadmin accounts
-  const founderEmails = [
+  // Seed founder superadmin accounts from env + default institutional admin
+  const envFounderEmails = (process.env.FOUNDER_ADMIN_EMAILS || '')
+    .split(',')
+    .map(e => e.toLowerCase().trim())
+    .filter(Boolean);
+  const founderEmails = [...new Set([
     'admin@elingu.ke',
-    'mutwirijamesbam@gmail.com',
-    'mutwirijamesbarn@gmail.com',
-    (process.env.ADMIN_EMAIL || '').toLowerCase().trim()
-  ].filter(Boolean);
+    (process.env.ADMIN_EMAIL || '').toLowerCase().trim(),
+    ...envFounderEmails
+  ].filter(Boolean))];
 
   const defaultPassword = (process.env.ADMIN_PASSWORD || '').trim();
   const defaultHash = defaultPassword ? authUtils.hashCredentialSync(defaultPassword) : null;
@@ -170,7 +173,7 @@ function initAdminStore() {
       if (defaultHash) {
         store.admins.push({
           id: `admin_founder_${idx + 1}`,
-          name: email.includes('mutwiri') ? 'James Mutwiri (Founder)' : 'Elingu Founder & Super Admin',
+          name: 'Elingu Founder & Super Admin',
           email,
           passwordHash: defaultHash,
           role: 'super_admin',
@@ -217,12 +220,17 @@ async function authenticateAdmin(email, password) {
   let admin = store.admins.find(a => a.email.toLowerCase() === cleanEmail);
 
   // If it's a recognized founder email that wasn't found, auto-add
-  const isFounder = ['admin@elingu.ke', 'mutwirijamesbam@gmail.com', 'mutwirijamesbarn@gmail.com'].includes(cleanEmail);
+  const allowedFounders = [
+    'admin@elingu.ke',
+    (process.env.ADMIN_EMAIL || '').toLowerCase().trim(),
+    ...(process.env.FOUNDER_ADMIN_EMAILS || '').split(',').map(e => e.toLowerCase().trim())
+  ].filter(Boolean);
+  const isFounder = allowedFounders.includes(cleanEmail);
   if (!admin && isFounder && configuredAdminPass) {
     const defaultHash = authUtils.hashCredentialSync(configuredAdminPass);
     admin = {
       id: 'admin_founder_' + crypto.randomBytes(3).toString('hex'),
-      name: 'James Mutwiri (Founder)',
+      name: 'Elingu Founder & Super Admin',
       email: cleanEmail,
       passwordHash: defaultHash,
       role: 'super_admin',
@@ -800,7 +808,7 @@ function submitGradeChangeRequest({ parentEmail, studentId, requestedGrade, reas
   }
 
   const requestRecord = {
-    id: `gcr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: `gcr_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
     studentId,
     studentHandle: student.handle,
     currentGrade: student.grade,

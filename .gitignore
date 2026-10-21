@@ -61,4 +61,9 @@ docs/teamwork_exhaust/backups/
 docs/teamwork_exhaust/*.log
 docs/teamwork_exhaust/*.json
 
+# ── PRESENTATION DECKS & OFFICE LOCK FILES ───────────────────
+*.pptx
+~$*.pptx
+
+
 

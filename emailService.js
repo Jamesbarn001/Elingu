@@ -99,7 +99,7 @@ if (BREVO_API_KEY) {
 const RESEND_API_KEY = process.env.RESEND_API_KEY || null;
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 const RESEND_FROM = `${FROM_NAME} <${process.env.RESEND_FROM || 'onboarding@resend.dev'}>`;
-const DEV_FALLBACK_EMAIL = process.env.RESEND_DEV_FALLBACK_EMAIL || 'mutwirijamesbarn@gmail.com';
+const DEV_FALLBACK_EMAIL = process.env.RESEND_DEV_FALLBACK_EMAIL || '';
 const IS_RESEND_SANDBOX = (process.env.RESEND_FROM || '').includes('resend.dev');
 
 if (!BREVO_API_KEY && !smtpTransporter && resend) {

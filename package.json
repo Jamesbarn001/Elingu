@@ -1,11 +1,12 @@
 {
   "name": "elingu-starter",
-  "version": "0.1.0",
-  "description": "Elingu — Month 1 skateboard. The simplest working version of the Socratic chat loop.",
+  "version": "5.0.0",
+  "description": "Elingu — Multi-curriculum Socratic AI Tutor & Institutional Portal (Kenyan CBE & British IGCSE).",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch-path=server.js --watch-path=public --watch-path=studentStore.js --watch-path=constitution.js --watch-path=curriculumContext.js server.js",
+    "dev": "node --watch-path=server.js --watch-path=public --watch-path=studentStore.js --watch-path=parentStore.js --watch-path=teacherStore.js --watch-path=teacherRoutes.js --watch-path=adminStore.js --watch-path=adminRoutes.js --watch-path=constitution.js --watch-path=curriculumContext.js server.js",
+    "test": "node tests/runner.js",
     "db:inspect": "node db/inspect.js",
     "db:migrate": "node db/migrate.js",
     "db:reset": "node db/reset.js",

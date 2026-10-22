@@ -422,25 +422,65 @@ async function resetFamilyPassword(emailOrPhone, newPassword) {
   return { success: true, message: 'Family Password updated successfully!' };
 }
 
-// Change password from within portal — requires current password
-async function changeFamilyPassword(emailOrPhone, oldPassword, newPassword) {
+// Change password from within portal — requires current password and strictly enforces 2FA OTP
+async function changeFamilyPassword(emailOrPhone, oldPassword, newPassword, otp) {
   const store = loadJson(PARENTS_FILE, { parents: [] });
   const parent = findParentInStore(store, emailOrPhone);
 
-  if (!parent || !parent.verified) return { success: false, error: 'Account not found.' };
+  if (!parent || !parent.verified) return { success: false, error: 'Account not found or not verified.' };
 
-  const isValid = await authUtils.verifyCredential(oldPassword, parent.familyPinHash, 'elingu_parent_salt_2026');
-  if (!isValid) {
-    return { success: false, error: 'Incorrect current password.' };
+  // Check account lockout
+  const lockStatus = authUtils.checkLockout(parent);
+  if (lockStatus.locked) {
+    return { success: false, locked: true, error: `Account temporarily locked. Try again in ${lockStatus.minutesRemaining} minute(s).` };
+  }
+  if (lockStatus.expired) {
+    authUtils.clearFailedAttempts(parent);
   }
 
-  const validation = authUtils.validatePassword(newPassword);
+  // 1. Verify current password
+  const cleanOldPassword = String(oldPassword || '').trim();
+  const isValid = await authUtils.verifyCredential(cleanOldPassword, parent.familyPinHash, 'elingu_parent_salt_2026');
+  if (!isValid) {
+    const failResult = authUtils.recordFailedAttempt(parent, 'parent');
+    saveJson(PARENTS_FILE, store);
+    if (failResult.locked) {
+      return { success: false, locked: true, error: `Too many failed attempts. Account locked for ${authUtils.PARENT_LOCKOUT_MINUTES} minutes.` };
+    }
+    return { success: false, error: `Incorrect current password. ${failResult.attemptsRemaining} attempt(s) remaining.` };
+  }
+
+  // 2. Validate new password strength
+  const cleanNewPassword = String(newPassword || '').trim();
+  const validation = authUtils.validatePassword(cleanNewPassword);
   if (!validation.valid) return { success: false, error: validation.error };
 
-  parent.familyPinHash = await authUtils.hashCredential(newPassword);
+  if (cleanOldPassword === cleanNewPassword) {
+    return { success: false, error: 'New password cannot be the same as your current password.' };
+  }
+
+  // 3. Strictly verify 2FA OTP
+  if (!otp && !parent.otpVerified) {
+    return { success: false, error: 'Security verification required: please enter the 6-digit verification code.' };
+  }
+
+  if (otp) {
+    const otpResult = authUtils.verifyOTPFromRecord(parent, String(otp).trim());
+    if (!otpResult.valid) {
+      saveJson(PARENTS_FILE, store);
+      return { success: false, error: otpResult.error || 'Invalid or expired 2FA code.' };
+    }
+  }
+
+  // 4. Update password & clear security flags
+  parent.familyPinHash = await authUtils.hashCredential(cleanNewPassword);
+  parent.otpVerified = false; // Consume 2FA verification
+  parent.otpHash = null;
+  parent.otpExpiresAt = null;
+  authUtils.clearFailedAttempts(parent);
   parent.lastActive = new Date().toISOString();
   saveJson(PARENTS_FILE, store);
-  return { success: true, message: 'Password changed successfully!' };
+  return { success: true, message: 'Family Password updated successfully with 2FA verification!' };
 }
 
 // Parent resets a child's 4-digit PIN

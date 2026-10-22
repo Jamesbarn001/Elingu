@@ -9970,7 +9970,7 @@
           headers['Authorization'] = `Bearer ${studentToken}`;
         }
 
-        const res = await fetch('/api/chat', {
+        let res = await fetch('/api/chat', {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -9980,6 +9980,21 @@
             studentId: activeStudent ? activeStudent.id : null
           }),
         });
+
+        // If a stale/mismatched token in sessionStorage caused a 401 while activeStudent is valid, clear the stale token and retry once
+        if (res.status === 401 && studentToken && activeStudent && activeStudent.id) {
+          sessionStorage.removeItem('elingu_student_token');
+          res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: history,
+              grade: currentGrade,
+              subject: currentSubject,
+              studentId: activeStudent.id
+            }),
+          });
+        }
 
         if (res.status === 401) {
           const errData = await res.json();
@@ -10238,6 +10253,7 @@
       setTimeout(() => dismissSplashScreen(), 2200);
     })();
 
+
     async function initStudentSystem() {
       const urlParams = new URLSearchParams(window.location.search);
       const authReq = urlParams.get('auth'); // 'login', 'signin', 'signup', 'select'
@@ -10254,12 +10270,13 @@
         console.warn('Storage read warning in initStudentSystem:', e);
       }
 
+      const isExplicitAuthModal = authReq === 'login' || authReq === 'signin' || authReq === 'signup' || authReq === 'select';
+
       // ── SYNCHRONOUS LOCKOUT & VIEW ROUTING ──
-      // If auth is explicitly requested via URL (?auth=...) OR no active session
-      if (authReq || !hasActiveSession) {
+      // If auth modal is explicitly requested via URL (?auth=signup|login|select) OR no active session
+      if (isExplicitAuthModal || !hasActiveSession) {
         isLockedOut = true;
-        // From Gateway (?auth=select) or ?auth=signup or new learner: show clean Sign Up wizard
-        if (authReq === 'signup' || authReq === 'select' || (!parsedStudent && authReq !== 'login')) {
+        if (authReq === 'signup' || authReq === 'select' || (!parsedStudent && authReq !== 'login' && authReq !== 'signin')) {
           showAuthView('signup');
         } else {
           showAuthView('login');
@@ -10294,7 +10311,6 @@
         } catch (e) {
           console.warn('Background storage read warning:', e);
         }
-        const isExplicitResume = authReq === 'resume' || authReq === 'chat';
 
         // 1. Explicit Login requested via ?auth=login
         if (authReq === 'login' || authReq === 'signin') {
@@ -10308,12 +10324,12 @@
             const pinInput = document.getElementById('signInPassword');
             if (pinInput) pinInput.focus();
           }, 50);
-        } else if (!isExplicitResume || !activeStudent || !hasActiveSession) {
-          // 2. Default entry: visits to /learn, /learn?auth=signup, /learn?auth=select all show Sign Up onboarding INSTANTLY
+        } else if (authReq === 'signup' || authReq === 'select' || !activeStudent || !hasActiveSession) {
+          // 2. Explicit Sign Up requested or no active session in this tab
           isLockedOut = true;
           showAuthView('signup');
         } else {
-          // 3. Explicit resume with active authenticated session
+          // 3. Active authenticated session in this tab
           activeStudent = normalizeActiveStudent(activeStudent);
 
           // Normal unlocked state
@@ -10380,6 +10396,7 @@
     function logoutActiveStudent() {
       localStorage.removeItem('elingu_active_student');
       sessionStorage.removeItem('elingu_student_session');
+      sessionStorage.removeItem('elingu_student_token');
       activeStudent = null;
       isLockedOut = true;
       history = [];
@@ -11307,6 +11324,7 @@
             sessionStorage.setItem('elingu_student_token', data.token);
           }
           activeStudent = normalizeActiveStudent(data.student);
+          sessionStorage.setItem('elingu_student_session', activeStudent.id);
           localStorage.setItem('elingu_active_student', JSON.stringify(activeStudent));
           updateStudentUI();
           setGrade(activeStudent.grade, { skipSubjectLoad: true });
@@ -11323,6 +11341,7 @@
           if (profData && profData.student) {
             isLockedOut = false;
             activeStudent = normalizeActiveStudent(profData.student);
+            sessionStorage.setItem('elingu_student_session', activeStudent.id);
             localStorage.setItem('elingu_active_student', JSON.stringify(activeStudent));
             updateStudentUI();
             setGrade(activeStudent.grade, { skipSubjectLoad: true });
@@ -12580,6 +12599,10 @@
             btnComplete.innerHTML = '<span>Create Account 🚀</span>';
           }
 
+          if (data.sessionToken) {
+            sessionStorage.setItem('elingu_student_token', data.sessionToken);
+          }
+
           // ── AWAITING PARENT APPROVAL — show dedicated check-email screen ──
           if (data.awaitingParentApproval) {
             showParentApprovalScreen(data.student);
@@ -12588,6 +12611,10 @@
             return;
           }
 
+          loginLearnerDirectly(data.student, data.sessionToken);
+          pendingSignUpData = null;
+          goToSignUpStep1();
+          closeAuthOverlay();
           return;
         }
 
@@ -13308,6 +13335,9 @@
           isLockedOut = false;
           activeStudent = normalizeActiveStudent(data.student);
           try {
+            if (data.sessionToken) {
+              sessionStorage.setItem('elingu_student_token', data.sessionToken);
+            }
             localStorage.setItem('elingu_active_student', JSON.stringify(activeStudent));
             sessionStorage.removeItem('elingu_waiting_student');
             sessionStorage.setItem('elingu_student_session', activeStudent.id);
@@ -13458,6 +13488,10 @@
         if (data.student) {
           isLockedOut = false;
           activeStudent = normalizeActiveStudent(data.student);
+          sessionStorage.setItem('elingu_student_session', activeStudent.id);
+          if (data.sessionToken) {
+            sessionStorage.setItem('elingu_student_token', data.sessionToken);
+          }
           localStorage.setItem('elingu_active_student', JSON.stringify(activeStudent));
           updateStudentUI();
           setGrade(8, { skipSubjectLoad: true });
@@ -13608,7 +13642,7 @@
           }
           setTimeout(() => {
             closeStudentPinReset();
-            loginLearnerDirectly(data.student);
+            loginLearnerDirectly(data.student, data.sessionToken);
           }, 800);
         } else {
           if (fb) {

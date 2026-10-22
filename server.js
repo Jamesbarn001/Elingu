@@ -674,8 +674,13 @@ Formatting: Write math equations in clean plain text (e.g. 1/2 + 1/3 = 5/6). Do 
   // Gemini (Primary Provider with 2.8s fast timeout & instant cascade)
   if (ACTIVE_PROVIDER === 'gemini' && !needsEscalation) {
     try {
-      const model = forSummarisation ? 'gemini-flash-lite-latest' : GEMINI_MODEL;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_API_KEY}`;
+      const primaryModel = forSummarisation ? 'gemini-flash-lite-latest' : GEMINI_MODEL;
+      const candidateModels = [
+        primaryModel,
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-flash-latest'
+      ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
       const geminiMessages = messages.map(m => ({
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -690,50 +695,58 @@ Formatting: Write math equations in clean plain text (e.g. 1/2 + 1/3 = 5/6). Do 
         generationConfig: { maxOutputTokens: limit },
       };
 
-      // 6.0 second timeout controller to prevent user-facing hangs
+      // Timeout controller to prevent user-facing hangs (15s for Virtual Lab / deep responses, 12s standard)
       const controller = new AbortController();
-      const timeoutMs = parseInt(process.env.GEMINI_TIMEOUT_MS || '6000', 10);
+      const defaultTimeout = (maxTokens && maxTokens > 1000) ? 15000 : 12000;
+      const envTimeout = process.env.GEMINI_TIMEOUT_MS ? parseInt(process.env.GEMINI_TIMEOUT_MS, 10) : 0;
+      const timeoutMs = Math.max(envTimeout, defaultTimeout);
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      }).finally(() => clearTimeout(timeoutId));
+      let lastErrorText = null;
+      try {
+        for (const candidate of candidateModels) {
+          if (controller.signal.aborted) break;
+          const attemptController = new AbortController();
+          const attemptTimeout = (maxTokens && maxTokens > 1000) ? 8000 : 6000;
+          const attemptTimer = setTimeout(() => attemptController.abort(), attemptTimeout);
+          const combinedSignal = (typeof AbortSignal.any === 'function')
+            ? AbortSignal.any([controller.signal, attemptController.signal])
+            : attemptController.signal;
 
-      if (!res.ok) {
-        const errText = await res.text();
-        // If 503 high demand or 404, auto-failover to gemini-3.7-flash
-        if ((res.status === 503 || res.status === 404) && model !== 'gemini-3.7-flash') {
-          console.warn(`⚠️ Primary Gemini model (${model}) hit status ${res.status}. Seamless failover to gemini-3.7-flash...`);
           try {
-            const backupUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${GOOGLE_API_KEY}`;
-            const backupRes = await fetch(backupUrl, {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${candidate}:generateContent?key=${GOOGLE_API_KEY}`;
+            const res = await fetch(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(body),
-            });
-            if (backupRes.ok) {
-              const bData = await backupRes.json();
-              const bReply = stripThinking(bData?.candidates?.[0]?.content?.parts?.[0]?.text || null);
-              if (bReply) return bReply;
+              signal: combinedSignal,
+            }).finally(() => clearTimeout(attemptTimer));
+
+            if (res.ok) {
+              const data = await res.json();
+              const reply = stripThinking(data?.candidates?.[0]?.content?.parts?.[0]?.text || null);
+              if (reply) {
+                const inputTokens = data?.usageMetadata?.promptTokenCount || estimateTokens(systemPrompt + messages.map(m => m.content).join(''));
+                const outputTokens = data?.usageMetadata?.candidatesTokenCount || estimateTokens(reply || '');
+                logUsage('gemini', candidate, inputTokens, outputTokens);
+                return reply;
+              }
+            } else {
+              lastErrorText = `status ${res.status}: ${await res.text()}`;
+              console.warn(`⚠️ Gemini candidate (${candidate}) returned ${res.status}. Cascading to next available model...`);
             }
-          } catch (backupErr) {
-            console.warn(`⚠️ Backup Gemini call failed: ${backupErr.message}`);
+          } catch (modelErr) {
+            clearTimeout(attemptTimer);
+            if (controller.signal.aborted) throw modelErr;
+            const isAttemptTimeout = attemptController.signal.aborted;
+            console.warn(`⚠️ Gemini candidate (${candidate}) ${isAttemptTimeout ? 'timed out (> ' + attemptTimeout + 'ms)' : 'failed: ' + modelErr.message}. Trying next model...`);
           }
         }
-        throw new Error(`Gemini API error ${res.status}: ${errText}`);
+      } finally {
+        clearTimeout(timeoutId);
       }
 
-      const data = await res.json();
-      const reply = stripThinking(data?.candidates?.[0]?.content?.parts?.[0]?.text || null);
-
-      const inputTokens = data?.usageMetadata?.promptTokenCount || estimateTokens(systemPrompt + messages.map(m => m.content).join(''));
-      const outputTokens = data?.usageMetadata?.candidatesTokenCount || estimateTokens(reply || '');
-      logUsage('gemini', model, inputTokens, outputTokens);
-
-      return reply;
+      throw new Error(`All Gemini candidate models failed. Last error: ${lastErrorText}`);
     } catch (err) {
       const isTimeout = err.name === 'AbortError' || err.message.includes('aborted');
       console.warn(`⚠️ Primary provider (Gemini) failed ${isTimeout ? '(TIMED OUT > 2.8s)' : ''}: ${err.message}`);
@@ -754,10 +767,11 @@ ${isEnglish ? 'CRITICAL LANGUAGE RULE: For English class, speak 100% in natural 
 CRITICAL: Respond directly to the student immediately. Do NOT output <think> tags or internal reasoning blocks.
 Formatting: Write math equations in clean plain text (e.g. 1/2 + 1/3 = 5/6). Do NOT use LaTeX syntax like \\frac{}.`;
 
+          const groqMaxTokens = forSummarisation ? 300 : Math.min(maxTokens || 1000, 800);
           const response = await groqClient.chat.completions.create({
             model: GROQ_MODEL,
             messages: [{ role: 'system', content: leanSystemPrompt }, ...messages],
-            max_tokens: forSummarisation ? 300 : 4000,
+            max_tokens: groqMaxTokens,
           });
           const reply = stripThinking(response.choices[0]?.message?.content || null);
           const inputTokens = response.usage?.prompt_tokens || estimateTokens(leanSystemPrompt);
@@ -1465,7 +1479,7 @@ app.post('/api/chat', async (req, res) => {
     try {
       reply = await callLLM(activeMessages, staticPrompt, dynamicPrompt, { maxTokens });
     } catch (llmErr) {
-      if (isTestEnv) {
+      if (isTestEnv(req)) {
         reply = "Spot on! 🌟 That's a wonderful question to explore. Before we jump straight to the final answer, what do you already know about this topic, and how might we break it into two smaller steps? 🤔";
       } else {
         throw llmErr;
@@ -2006,7 +2020,8 @@ app.post('/api/auth/google', async (req, res) => {
           streak: s.streak || 1,
           points: s.points || 150,
           subscriptionTier,
-          tierInfo
+          tierInfo,
+          sessionToken: (authUtils && authUtils.generateStudentToken) ? authUtils.generateStudentToken(s) : null
         };
       });
 
@@ -2015,6 +2030,7 @@ app.post('/api/auth/google', async (req, res) => {
           success: true,
           role: 'student',
           isNew: false,
+          sessionToken: sanitizedStudents[0].sessionToken || null,
           student: sanitizedStudents[0],
           students: sanitizedStudents
         });
@@ -2402,8 +2418,10 @@ app.post('/api/students/reset-pin', async (req, res) => {
       }).catch(e => console.warn('[server] Parent SMS alert error:', e.message));
     }
 
+    const sessionToken = (authUtils && authUtils.generateStudentToken) ? authUtils.generateStudentToken(result.student) : null;
     res.json({
       success: true,
+      sessionToken,
       student: result.student,
       message: result.message
     });
@@ -2431,9 +2449,12 @@ app.get('/api/students/verification-status', (req, res) => {
     const parentContactDisplay = isPhone ? displayPhone : student.email;
     const isBriStudent = studentStore.isBritishCurriculum(student);
 
+    const sessionToken = (isVerified && authUtils && authUtils.generateStudentToken) ? authUtils.generateStudentToken(student) : null;
+
     res.json({
       success: true,
       verified: isVerified,
+      sessionToken,
       handle: student.handle,
       contactType: isPhone ? 'sms' : 'email',
       parentContactDisplay,
@@ -3137,18 +3158,90 @@ app.post('/api/parent/reset-pin', async (req, res) => {
   }
 });
 
-// POST /api/parent/change-password — Change password while logged in (requires current password)
+// POST /api/parent/change-password — Change password while logged in (strictly requires current password + 2FA OTP)
 app.post('/api/parent/change-password', async (req, res) => {
   try {
-    const { email, currentPassword, newPassword } = req.body;
-    if (!email || !currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Email, current password, and new password are required.' });
+    const { email, phone, currentPassword, newPassword, otp } = req.body;
+    const identifier = (email || phone || '').trim();
+    if (!identifier || !currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Email or phone number, current password, and new password are required.' });
     }
-    const result = await parentStore.changeFamilyPassword(email, currentPassword, newPassword);
+
+    // Step 1: If no OTP provided, verify current password and new password strength, then generate and send 2FA OTP
+    if (!otp) {
+      // 1. Verify current password
+      const authRes = await parentStore.verifyFamilyPassword(identifier, currentPassword);
+      if (!authRes.success) {
+        return res.status(authRes.locked ? 423 : 401).json({ error: authRes.error });
+      }
+
+      // 2. Validate new password strength
+      const validation = authUtils.validatePassword(newPassword);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+
+      if (currentPassword === newPassword) {
+        return res.status(400).json({ error: 'New password cannot be the same as your current password.' });
+      }
+
+      // 3. Generate 2FA OTP
+      const otpRes = parentStore.requestOTP(identifier);
+      if (!otpRes.success) {
+        return res.status(400).json({ error: otpRes.error });
+      }
+
+      const parent = otpRes.parent;
+      const isPhone = !identifier.includes('@') && !!authUtils.normalizeKenyanPhone(identifier);
+
+      if (isPhone || (parent.phone && (!parent.email || parent.email.includes('@phone.elingu.local')))) {
+        const sendTo = parent.phone || identifier;
+        const smsRes = await smsService.sendOTPSMS({
+          to: sendTo,
+          otpCode: otpRes.otp,
+          purpose: 'change your Family Password'
+        });
+        if (!smsRes.success && !smsRes.simulated) {
+          return res.status(500).json({ error: 'Failed to send SMS code. Please verify your phone number.' });
+        }
+        return res.json({
+          success: true,
+          otpRequired: true,
+          channel: 'sms',
+          message: `Current password verified. A 6-digit security code has been sent via SMS to ${authUtils.normalizeKenyanPhone(sendTo)}. Enter it below to complete the update.`
+        });
+      }
+
+      // Email channel
+      const cleanEmail = (parent.email && !parent.email.includes('@phone.elingu.local'))
+        ? parent.email
+        : identifier.toLowerCase();
+
+      const emailRes = await emailService.sendOTPEmail({
+        parentEmail: cleanEmail,
+        otpCode: otpRes.otp,
+        purpose: 'change your Family Password'
+      });
+
+      if (!emailRes.success) {
+        return res.status(500).json({ error: 'Failed to send verification code email. Please check your address.' });
+      }
+
+      return res.json({
+        success: true,
+        otpRequired: true,
+        channel: 'email',
+        message: `Current password verified. A 6-digit security code has been sent to ${cleanEmail}. Enter it below to complete the update.`
+      });
+    }
+
+    // Step 2: OTP is provided -> verify old password + OTP + update new password
+    const result = await parentStore.changeFamilyPassword(identifier, currentPassword, newPassword, otp);
     if (!result.success) {
-      return res.status(400).json({ error: result.error });
+      return res.status(result.locked ? 423 : 400).json({ error: result.error });
     }
-    res.json({ success: true, message: result.message });
+
+    res.json({ success: true, message: 'Family Password updated successfully with 2FA verification!' });
   } catch (err) {
     console.error('[server] Change password error:', err.message);
     res.status(500).json({ error: 'Failed to change password.' });
@@ -5369,8 +5462,8 @@ app.get('/parent/portal', (req, res) => {
                     <label for="newFamilyPassword" style="font-size: 12.5px; margin-bottom: 0;">New Family Password</label>
                     <a href="javascript:void(0)" onclick="toggleInputType('newFamilyPassword', this)" style="font-size: 11.5px; color: var(--pp-accent); font-weight: 500; text-decoration: none;">Show 👁️</a>
                   </div>
-                  <input type="password" id="newFamilyPassword" class="form-input" placeholder="Min 8 chars (letters + numbers)" autocomplete="new-password">
-                  <div style="font-size: 11.5px; color: var(--pp-text-muted); margin-top: 4px;">Must contain at least 8 characters, with letters and numbers.</div>
+                  <input type="password" id="newFamilyPassword" class="form-input" placeholder="Min 8 chars (letters, numbers & symbol, e.g. !@#)" autocomplete="new-password">
+                  <div style="font-size: 11.5px; color: var(--pp-text-muted); margin-top: 4px;">Must contain at least 8 characters, with letters, numbers, and at least one special symbol (!@#$%^&*).</div>
                 </div>
                 <div class="form-group" style="margin-bottom: 14px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -5493,6 +5586,9 @@ app.get('/parent/portal', (req, res) => {
             </button>
             <button type="button" id="tabBtnBilling" class="portal-tab-btn" onclick="switchPortalTab('billing')">
               <span>💎 Membership & Billing</span>
+            </button>
+            <button type="button" id="tabBtnSecurity" class="portal-tab-btn" onclick="switchPortalTab('security')">
+              <span>🔐 Security & Password</span>
             </button>
           </div>
 
@@ -6138,6 +6234,64 @@ app.get('/parent/portal', (req, res) => {
           </div>
         </div>
 
+        <!-- TAB 3: SECURITY & PASSWORD -->
+        <div id="tabContentSecurity" style="display: none;">
+          <div class="portal-card" style="max-width: 580px; padding: 26px;">
+            <h3 style="font-size: 17px; font-weight: 700; color: var(--pp-accent); margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+              <span>🔐</span> Change Family Password
+            </h3>
+            <p style="font-size: 13px; color: var(--pp-text-sub); margin-bottom: 18px; line-height: 1.4;">
+              Change your Family Password used to unlock learner controls, approve new subjects, and access parent portraits. <strong>2FA security code required.</strong>
+            </p>
+
+            <!-- STEP 1: Current & New Password -->
+            <div id="step1ChangePassword">
+              <div class="form-group" style="margin-bottom: 14px;">
+                <label for="changeCurrentPassword" style="font-size: 12.5px; font-weight: 600;">Current Family Password</label>
+                <input type="password" id="changeCurrentPassword" class="form-input" placeholder="Enter current Family Password" autocomplete="current-password">
+              </div>
+
+              <div class="form-group" style="margin-bottom: 14px;">
+                <label for="changeNewPassword" style="font-size: 12.5px; font-weight: 600;">New Family Password</label>
+                <input type="password" id="changeNewPassword" class="form-input" placeholder="Min 8 chars (letters, numbers & symbol, e.g. !@#)" autocomplete="new-password">
+                <div style="font-size: 11.5px; color: var(--pp-text-muted); margin-top: 4px;">Must contain at least 8 characters, with letters, numbers, and at least one special symbol (!@#$%^&*).</div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 18px;">
+                <label for="changeConfirmPassword" style="font-size: 12.5px; font-weight: 600;">Confirm New Password</label>
+                <input type="password" id="changeConfirmPassword" class="form-input" placeholder="Re-enter new password" autocomplete="new-password">
+              </div>
+
+              <div id="changePasswordFeedback" style="display: none; margin-bottom: 14px; font-size: 12.5px; border-radius: 8px; padding: 10px 12px; line-height: 1.4;"></div>
+
+              <button type="button" id="btnRequestPasswordOtp" class="btn-portal-primary" style="height: 44px; width: 100%; font-size: 13.5px;" onclick="requestPasswordChangeOTP()">Verify &amp; Request 2FA Code 📩</button>
+            </div>
+
+            <!-- STEP 2: ENTER 2FA OTP -->
+            <div id="step2ChangePassword" style="display: none;">
+              <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+                <div style="font-size: 13px; font-weight: 700; color: #065F46; margin-bottom: 4px;">📩 2FA Verification Code Sent</div>
+                <div style="font-size: 12.5px; color: #047857; line-height: 1.4;" id="otpNoticeDesc">We have sent a 6-digit security code to your registered email or phone. Please check your inbox or SMS.</div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 18px; text-align: center;">
+                <label for="changePasswordOtp" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 8px;">Enter 6-Digit Security Code</label>
+                <input type="text" id="changePasswordOtp" class="form-input" maxlength="6" placeholder="123456" inputmode="numeric" style="font-size: 24px; font-weight: 700; text-align: center; letter-spacing: 8px; width: 220px; margin: 0 auto; display: block;" autocomplete="one-time-code" onkeyup="if(event.key==='Enter') submitPortalChangePassword()">
+              </div>
+
+              <div id="step2PasswordFeedback" style="display: none; margin-bottom: 14px; font-size: 12.5px; border-radius: 8px; padding: 10px 12px; line-height: 1.4;"></div>
+
+              <button type="button" id="btnConfirmPasswordOtp" class="btn-portal-primary" style="height: 44px; width: 100%; font-size: 13.5px;" onclick="submitPortalChangePassword()">Confirm &amp; Update Password 🔒</button>
+
+              <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" onclick="cancelPasswordChangeStep2()" style="background: none; border: none; font-size: 12.5px; color: var(--pp-text-muted); cursor: pointer; text-decoration: underline;">← Back to edit</button>
+                <button type="button" id="btnResendPasswordOtp" onclick="requestPasswordChangeOTP()" style="background: none; border: none; font-size: 12.5px; color: var(--pp-accent); font-weight: 600; cursor: pointer;">Resend code 🔄</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
         <!-- GRADE CORRECTION REQUEST MODAL -->
         <div id="gradeCorrectionModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 99999; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
           <div style="background: #FFFFFF; border-radius: 16px; padding: 28px; width: 90%; max-width: 460px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); border: 1px solid #E0D8CC;">
@@ -6279,15 +6433,180 @@ app.get('/parent/portal', (req, res) => {
 
         function switchPortalTab(tabName) {
           activeTab = tabName;
-          const isLearners = tabName === 'learners';
-
-          document.getElementById('tabBtnLearners').className = 'portal-tab-btn ' + (isLearners ? 'active' : '');
-          document.getElementById('tabBtnBilling').className = 'portal-tab-btn ' + (!isLearners ? 'active' : '');
-
-          document.getElementById('tabContentLearners').style.display = isLearners ? 'block' : 'none';
-          document.getElementById('tabContentBilling').style.display = !isLearners ? 'block' : 'none';
+          const tabs = ['learners', 'billing', 'security'];
+          tabs.forEach(t => {
+            const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+            const content = document.getElementById('tabContent' + t.charAt(0).toUpperCase() + t.slice(1));
+            if (btn) btn.className = 'portal-tab-btn ' + (t === tabName ? 'active' : '');
+            if (content) content.style.display = (t === tabName ? 'block' : 'none');
+          });
 
           window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function containsSpecialChar(str) {
+          var specials = '!@#$%^&*()_+-=[]{};\':"|,.<>/?~';
+          for (var i = 0; i < str.length; i++) {
+            if (specials.indexOf(str[i]) !== -1) return true;
+          }
+          return false;
+        }
+
+        async function requestPasswordChangeOTP() {
+          const currentPassword = document.getElementById('changeCurrentPassword').value.trim();
+          const newPassword = document.getElementById('changeNewPassword').value.trim();
+          const confirmPassword = document.getElementById('changeConfirmPassword').value.trim();
+          const fb = document.getElementById('changePasswordFeedback');
+          const btn = document.getElementById('btnRequestPasswordOtp');
+          const resendBtn = document.getElementById('btnResendPasswordOtp');
+
+          if (!currentPassword || !newPassword) {
+            fb.style.display = 'block';
+            fb.style.background = '#FEF2F2';
+            fb.style.color = '#991B1B';
+            fb.style.border = '1px solid #FECACA';
+            fb.textContent = 'Please enter both your current and new password.';
+            return;
+          }
+
+          if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !containsSpecialChar(newPassword)) {
+            fb.style.display = 'block';
+            fb.style.background = '#FEF2F2';
+            fb.style.color = '#991B1B';
+            fb.style.border = '1px solid #FECACA';
+            fb.textContent = 'New password must be at least 8 characters and include letters, numbers, and at least one special symbol (!@#$%^&*).';
+            return;
+          }
+
+          if (newPassword !== confirmPassword) {
+            fb.style.display = 'block';
+            fb.style.background = '#FEF2F2';
+            fb.style.color = '#991B1B';
+            fb.style.border = '1px solid #FECACA';
+            fb.textContent = 'New passwords do not match. Please verify.';
+            return;
+          }
+
+          if (newPassword === currentPassword) {
+            fb.style.display = 'block';
+            fb.style.background = '#FEF2F2';
+            fb.style.color = '#991B1B';
+            fb.style.border = '1px solid #FECACA';
+            fb.textContent = 'New password cannot be the same as your current password.';
+            return;
+          }
+
+          if (btn) { btn.disabled = true; btn.textContent = 'Verifying & sending code... ⏳'; }
+          if (resendBtn) { resendBtn.disabled = true; }
+          fb.style.display = 'none';
+
+          try {
+            const res = await fetch('/api/parent/change-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: savedEmail, currentPassword, newPassword })
+            });
+            const data = await res.json();
+            if (btn) { btn.disabled = false; btn.textContent = 'Verify & Request 2FA Code 📩'; }
+            if (resendBtn) { resendBtn.disabled = false; }
+
+            if (data.success && data.otpRequired) {
+              document.getElementById('step1ChangePassword').style.display = 'none';
+              document.getElementById('step2ChangePassword').style.display = 'block';
+              if (data.message) {
+                document.getElementById('otpNoticeDesc').textContent = data.message;
+              }
+              const otpInput = document.getElementById('changePasswordOtp');
+              if (otpInput) {
+                otpInput.value = '';
+                otpInput.focus();
+              }
+            } else {
+              fb.style.display = 'block';
+              fb.style.background = '#FEF2F2';
+              fb.style.color = '#991B1B';
+              fb.style.border = '1px solid #FECACA';
+              fb.textContent = data.error || 'Failed to request verification code.';
+            }
+          } catch (e) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Verify & Request 2FA Code 📩'; }
+            if (resendBtn) { resendBtn.disabled = false; }
+            fb.style.display = 'block';
+            fb.style.background = '#FEF2F2';
+            fb.style.color = '#991B1B';
+            fb.style.border = '1px solid #FECACA';
+            fb.textContent = 'Network error requesting verification code. Please try again.';
+          }
+        }
+
+        function cancelPasswordChangeStep2() {
+          document.getElementById('step2ChangePassword').style.display = 'none';
+          document.getElementById('step1ChangePassword').style.display = 'block';
+          const s2fb = document.getElementById('step2PasswordFeedback');
+          if (s2fb) s2fb.style.display = 'none';
+        }
+
+        async function submitPortalChangePassword() {
+          const currentPassword = document.getElementById('changeCurrentPassword').value.trim();
+          const newPassword = document.getElementById('changeNewPassword').value.trim();
+          const otp = document.getElementById('changePasswordOtp').value.trim();
+          const fb = document.getElementById('step2PasswordFeedback');
+          const btn = document.getElementById('btnConfirmPasswordOtp');
+
+          if (!otp || otp.length !== 6) {
+            fb.style.display = 'block';
+            fb.style.background = '#FEF2F2';
+            fb.style.color = '#991B1B';
+            fb.style.border = '1px solid #FECACA';
+            fb.textContent = 'Please enter the complete 6-digit verification code.';
+            return;
+          }
+
+          btn.disabled = true;
+          btn.textContent = 'Updating password... ⏳';
+          fb.style.display = 'none';
+
+          try {
+            const res = await fetch('/api/parent/change-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: savedEmail, currentPassword, newPassword, otp })
+            });
+            const data = await res.json();
+            btn.disabled = false;
+            btn.textContent = 'Confirm & Update Password 🔒';
+
+            if (data.success) {
+              savedPin = newPassword;
+              document.getElementById('changeCurrentPassword').value = '';
+              document.getElementById('changeNewPassword').value = '';
+              document.getElementById('changeConfirmPassword').value = '';
+              document.getElementById('changePasswordOtp').value = '';
+              document.getElementById('step2ChangePassword').style.display = 'none';
+              document.getElementById('step1ChangePassword').style.display = 'block';
+
+              const step1Fb = document.getElementById('changePasswordFeedback');
+              step1Fb.style.display = 'block';
+              step1Fb.style.background = '#F0FDF4';
+              step1Fb.style.color = '#065F46';
+              step1Fb.style.border = '1px solid #BBF7D0';
+              step1Fb.textContent = 'Family Password updated successfully with 2FA verification! 🎉';
+            } else {
+              fb.style.display = 'block';
+              fb.style.background = '#FEF2F2';
+              fb.style.color = '#991B1B';
+              fb.style.border = '1px solid #FECACA';
+              fb.textContent = data.error || 'Failed to update password.';
+            }
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = 'Confirm & Update Password 🔒';
+            fb.style.display = 'block';
+            fb.style.background = '#FEF2F2';
+            fb.style.color = '#991B1B';
+            fb.style.border = '1px solid #FECACA';
+            fb.textContent = 'Network error updating password. Please try again.';
+          }
         }
 
         function switchLearnerInsightTab(childId, tabName) {
@@ -6525,12 +6844,12 @@ app.get('/parent/portal', (req, res) => {
             return;
           }
 
-          if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+          if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(newPassword)) {
             fb.style.display = 'block';
             fb.style.background = '#FEF2F2';
             fb.style.color = '#991B1B';
             fb.style.border = '1px solid #FECACA';
-            fb.textContent = 'Password must be at least 8 characters and include both letters and numbers.';
+            fb.textContent = 'Password must be at least 8 characters and include letters, numbers, and at least one special symbol (e.g. !@#$%^&*).';
             return;
           }
 

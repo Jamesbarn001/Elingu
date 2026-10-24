@@ -167,6 +167,21 @@ function isValidEmail(email) {
     return { valid: false, error: 'Email must be between 6 and 254 characters.' };
   }
 
+  // Detect common mobile keyboard slip errors before regex
+  if (clean.includes(',')) {
+    return { valid: false, error: "Your email contains a comma ','. On mobile keyboards this is often typed instead of a dot '.' (e.g. use @gmail.com instead of @gmail,com)." };
+  }
+  if (clean.includes(' ')) {
+    return { valid: false, error: 'Email address cannot contain spaces. Please remove any spaces.' };
+  }
+  const atCount = (clean.match(/@/g) || []).length;
+  if (atCount === 0) {
+    return { valid: false, error: "Email is missing the '@' symbol (e.g. parent@gmail.com)." };
+  }
+  if (atCount > 1) {
+    return { valid: false, error: "Email cannot contain more than one '@' symbol." };
+  }
+
   // RFC 5322 standard regex check
   const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
   if (!emailRegex.test(clean)) {

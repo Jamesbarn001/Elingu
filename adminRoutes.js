@@ -1668,7 +1668,10 @@ router.get(['/admin', '/admin/portal', '/admin/login'], (req, res) => {
             <td><span class="badge badge-\${u.role}">\${u.role}</span></td>
             <td><strong>\${u.displayName}</strong></td>
             <td>\${u.identifier}</td>
-            <td style="color:var(--text-muted); font-size:12.5px;">\${u.subInfo}</td>
+            <td style="font-size:12.5px;">
+              <div style="font-weight:600; color:var(--text-main);">\${u.schoolName || u.subInfo}</div>
+              \${u.schoolCode ? \`<span style="display:inline-block; margin-top:3px; font-family:monospace; font-size:11px; background:rgba(74,222,128,0.12); color:#4ADE80; border:1px solid rgba(74,222,128,0.25); padding:1px 6px; border-radius:4px; cursor:pointer;" onclick="navigator.clipboard.writeText('\${u.schoolCode}'); showToast('Copied code ' + '\${u.schoolCode}');" title="Click to copy code">Code: \${u.schoolCode}\${u.streamCode ? ' • Stream: ' + u.streamCode : ''} 📋</span>\` : (u.schoolName ? '' : \`<span style="color:var(--text-muted);">\${u.subInfo}</span>\`)}
+            </td>
             <td><span class="badge badge-pilot">\${u.subscriptionTier}</span></td>
             <td>
               \${u.isLocked ? '<span class="badge badge-locked">LOCKED</span>' : '<span class="badge badge-active">OK</span>'}
@@ -1759,12 +1762,16 @@ router.get(['/admin', '/admin/portal', '/admin/login'], (req, res) => {
         }
 
         tbody.innerHTML = data.schools.map(s => {
-          const codes = Object.entries(s.joinCodes || {}).map(([str, code]) => \`\${str}: <strong style="color:var(--accent);">\${code}</strong>\`).join(' • ') || '—';
+          const codes = Object.entries(s.joinCodes || {}).map(([str, code]) => \`\${str}: <strong style="color:var(--accent); cursor:pointer; font-family:monospace;" onclick="navigator.clipboard.writeText('\${code}'); showToast('Copied stream code ' + '\${code}');" title="Click to copy stream code">\${code} 📋</strong>\`).join(' • ') || '—';
           return \`
             <tr>
-              <td><strong>\${s.name}</strong></td>
+              <td><strong style="font-size:14px; color:var(--text-main);">\${s.name}</strong></td>
               <td>\${s.county}, \${s.subCounty}</td>
-              <td><span style="font-family:monospace; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px;">\${s.adminCode}</span></td>
+              <td>
+                <span onclick="navigator.clipboard.writeText('\${s.adminCode}'); showToast('Copied Admin Code ' + '\${s.adminCode}');" style="font-family:monospace; background:rgba(74,222,128,0.12); color:#4ADE80; border:1px solid rgba(74,222,128,0.3); padding:3px 8px; border-radius:6px; cursor:pointer; font-weight:700; display:inline-flex; align-items:center; gap:5px;" title="Click to copy Admin Code">
+                  \${s.adminCode} 📋
+                </span>
+              </td>
               <td>\${s.teacherCount}</td>
               <td>\${s.studentCount}</td>
               <td style="font-size:12px;">\${codes}</td>

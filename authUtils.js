@@ -5,8 +5,10 @@
 // ════════════════════════════════════════════════════════════
 
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const dns = require('dns').promises;
 
 const BCRYPT_ROUNDS = 10;
 
@@ -128,14 +130,44 @@ function validateStudentPin(pin) {
 const DISPOSABLE_EMAIL_DOMAINS = new Set([
   'mailinator.com', 'tempmail.com', '10minutemail.com', 'guerrillamail.com',
   'sharklasers.com', 'throwawaymail.com', 'yopmail.com', 'trashmail.com',
-  'getairmail.com', 'dispostable.com', 'fakemailgenerator.com'
+  'getairmail.com', 'dispostable.com', 'fakemailgenerator.com', 'temp-mail.org',
+  'generator.email', 'emailondeck.com', 'inboxkitten.com', 'burners.email',
+  'fake.com', 'nowhere.com', 'random.com'
 ]);
+
+const COMMON_DOMAIN_TYPOS = {
+  'gamil.com': 'gmail.com',
+  'gmial.com': 'gmail.com',
+  'gmaill.com': 'gmail.com',
+  'gmai.com': 'gmail.com',
+  'gmal.com': 'gmail.com',
+  'gmaik.com': 'gmail.com',
+  'gmail.co': 'gmail.com',
+  'gmaill.co': 'gmail.com',
+  'yaho.com': 'yahoo.com',
+  'yahooo.com': 'yahoo.com',
+  'yhaoo.com': 'yahoo.com',
+  'yahoo.co': 'yahoo.com',
+  'hotmial.com': 'hotmail.com',
+  'hotmaill.com': 'hotmail.com',
+  'hotmai.com': 'hotmail.com',
+  'outlok.com': 'outlook.com',
+  'outloo.com': 'outlook.com',
+  'outlock.com': 'outlook.com',
+  'icoud.com': 'icloud.com',
+  'iclod.com': 'icloud.com'
+};
 
 function isValidEmail(email) {
   if (!email || typeof email !== 'string') return { valid: false, error: 'Email address is required.' };
   const clean = email.trim().toLowerCase();
-  
-  // RFC 5322 regex check
+
+  // Basic length constraints
+  if (clean.length < 6 || clean.length > 254) {
+    return { valid: false, error: 'Email must be between 6 and 254 characters.' };
+  }
+
+  // RFC 5322 standard regex check
   const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
   if (!emailRegex.test(clean)) {
     return { valid: false, error: 'Please enter a valid email address format (e.g. parent@example.com).' };
@@ -146,18 +178,94 @@ function isValidEmail(email) {
     return { valid: false, error: 'Invalid email address structure.' };
   }
 
+  // Reject consecutive dots or leading/trailing dots in local part
+  if (localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) {
+    return { valid: false, error: 'Email username cannot start, end, or contain consecutive dots.' };
+  }
+
+  // Reject overly short single-character username on major public providers
+  const majorProviders = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com'];
+  if (majorProviders.includes(domain) && localPart.length < 3) {
+    return { valid: false, error: `Username on @${domain} must be at least 3 characters.` };
+  }
+
+  // Detect common domain typos (e.g. gamil.com -> gmail.com)
+  if (COMMON_DOMAIN_TYPOS[domain]) {
+    return {
+      valid: false,
+      error: `Did you mean @${COMMON_DOMAIN_TYPOS[domain]}? Please check your email spelling so you can receive your activation message.`
+    };
+  }
+
+  // Reject disposable or fake email domains
   if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
     return { valid: false, error: 'Disposable or temporary email addresses are not permitted. Please use your genuine email.' };
   }
 
-  // Domain must contain a valid TLD (at least 2 letters)
+  // Domain must contain a valid TLD (at least 2 letters, max 24 letters)
   const parts = domain.split('.');
   const tld = parts[parts.length - 1];
-  if (!tld || tld.length < 2 || !/^[a-z]+$/.test(tld)) {
+  if (!tld || tld.length < 2 || tld.length > 24 || !/^[a-z]+$/.test(tld)) {
     return { valid: false, error: 'Email domain has an invalid top-level domain.' };
   }
 
   return { valid: true };
+}
+
+const MX_CACHE = new Map();
+
+/**
+ * Asynchronously verifies that an email's domain actually has active mail servers (MX records).
+ * Protects against non-existent or unreachable email destinations.
+ * @param {string} email
+ * @returns {Promise<{ valid: boolean, error?: string, domain?: string }>}
+ */
+async function verifyEmailDeliverable(email) {
+  const basic = isValidEmail(email);
+  if (!basic.valid) return basic;
+
+  const [_, domain] = email.trim().toLowerCase().split('@');
+
+  // Major trusted providers always have active MX servers
+  const TRUSTED_DOMAINS = new Set([
+    'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk',
+    'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com',
+    'aol.com', 'zoho.com', 'proton.me', 'protonmail.com'
+  ]);
+  if (TRUSTED_DOMAINS.has(domain)) {
+    return { valid: true, domain };
+  }
+
+  // Cache check (TTL 1 hour)
+  const cached = MX_CACHE.get(domain);
+  if (cached && (Date.now() - cached.time < 3600000)) {
+    return cached.result;
+  }
+
+  try {
+    const mx = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 2500))
+    ]);
+
+    if (!Array.isArray(mx) || mx.length === 0) {
+      const res = { valid: false, error: `The email domain '@${domain}' does not have active mail servers and cannot receive emails. Please check your spelling.` };
+      MX_CACHE.set(domain, { result: res, time: Date.now() });
+      return res;
+    }
+
+    const res = { valid: true, domain };
+    MX_CACHE.set(domain, { result: res, time: Date.now() });
+    return res;
+  } catch (err) {
+    if (err.code === 'ENOTFOUND' || err.code === 'NXDOMAIN' || err.code === 'ENODATA') {
+      const res = { valid: false, error: `The email domain '@${domain}' does not exist. Please check your spelling.` };
+      MX_CACHE.set(domain, { result: res, time: Date.now() });
+      return res;
+    }
+    // Sandbox / offline network / timeout fallback: allow through gracefully
+    return { valid: true, domain };
+  }
 }
 
 // ── BCRYPT HASHING ──────────────────────────────────────────
@@ -608,6 +716,7 @@ module.exports = {
   validatePassword,
   validateStudentPin,
   isValidEmail,
+  verifyEmailDeliverable,
   normalizeKenyanPhone,
   WEAK_PASSWORDS,
   WEAK_4_DIGIT_PINS,

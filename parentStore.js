@@ -332,31 +332,20 @@ function findParentInStore(store, identifier) {
   if (!identifier) return null;
   const clean = String(identifier).trim().toLowerCase();
   if (clean.includes('@')) {
-    let found = store.parents.find(p => p.email && p.email.toLowerCase() === clean);
-    if (found) return found;
-
-    // Email alias fallback (e.g. burugu.joshua@gmail.com matching mburugu.joshua@gmail.com)
-    const [userPart, domainPart] = clean.split('@');
-    found = store.parents.find(p => {
-      if (!p.email || !p.email.includes('@')) return false;
-      const [pUser, pDomain] = p.email.toLowerCase().split('@');
-      if (pDomain !== domainPart) return false;
-      return (pUser === 'm' + userPart || userPart === 'm' + pUser || pUser.endsWith('.' + userPart) || userPart.endsWith('.' + pUser));
-    });
-    if (found) return found;
-    return null;
+    return store.parents.find(p => p.email && p.email.toLowerCase() === clean) || null;
   }
   const normPhone = authUtils.normalizeKenyanPhone(clean);
   if (normPhone) {
-    return store.parents.find(p => (p.phone && authUtils.normalizeKenyanPhone(p.phone) === normPhone) || p.email === normPhone + '@phone.elingu.local');
+    return store.parents.find(p => (p.phone && authUtils.normalizeKenyanPhone(p.phone) === normPhone) || p.email === normPhone + '@phone.elingu.local') || null;
   }
-  return store.parents.find(p => p.email && p.email.toLowerCase() === clean);
+  return store.parents.find(p => p.email && p.email.toLowerCase() === clean) || null;
 }
 
 async function verifyFamilyPassword(emailOrPhone, familyPassword) {
   const store = loadJson(PARENTS_FILE, { parents: [] });
   const parent = findParentInStore(store, emailOrPhone);
-  if (!parent || !parent.verified) return { success: false, error: 'Account not found or not verified.' };
+  if (!parent) return { success: false, error: 'No parent account found with this email or phone number. Please check your spelling.' };
+  if (!parent.verified) return { success: false, error: 'This parent account has not been activated yet. Please check your email for the activation link.' };
 
   // Check lockout
   const lockStatus = authUtils.checkLockout(parent);

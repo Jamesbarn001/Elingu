@@ -614,18 +614,39 @@ function getAllUsers({ role = 'all', search = '', page = 1, limit = 40 }) {
   const studentsStore = loadJson(STUDENTS_FILE, { students: [] });
   const teachersStore = loadJson(TEACHERS_FILE, { teachers: [] });
   const parentsStore = loadJson(PARENTS_FILE, { parents: [] });
+  const schoolsStore = loadJson(SCHOOLS_FILE, { schools: [] });
+
+  const schoolMap = {};
+  (schoolsStore.schools || []).forEach(sch => {
+    if (sch.id) schoolMap[sch.id] = sch;
+    if (sch.name) schoolMap[sch.name.toLowerCase().trim()] = sch;
+    if (sch.adminCode) schoolMap[sch.adminCode.toUpperCase().trim()] = sch;
+  });
 
   let combined = [];
 
   // 1. Format students
   if (role === 'all' || role === 'student') {
     (studentsStore.students || []).forEach(s => {
+      const sch = (s.schoolId && schoolMap[s.schoolId]) ||
+                  (s.schoolName && schoolMap[s.schoolName.toLowerCase().trim()]) ||
+                  (s.schoolAdminCode && schoolMap[s.schoolAdminCode.toUpperCase().trim()]);
+      const schoolName = sch ? sch.name : (s.schoolName || 'Independent');
+      const schoolCode = sch ? sch.adminCode : (s.schoolAdminCode || null);
+      const streamCode = s.streamJoinCode || null;
+      const schoolDetails = schoolCode
+        ? `${schoolName} (Code: ${schoolCode}${streamCode ? ' • Stream: ' + streamCode : ''})`
+        : (s.schoolName || 'Independent');
+
       combined.push({
         id: s.id,
         role: 'student',
         displayName: s.handle || 'Learner',
         identifier: s.handle || s.id,
-        subInfo: `Grade ${s.grade || 7} • ${s.schoolName || 'Independent'}`,
+        schoolName,
+        schoolCode,
+        streamCode,
+        subInfo: `Grade ${s.grade || 7} • ${schoolDetails}`,
         contact: s.parentPhone || s.parentEmail || '—',
         subscriptionTier: s.subscriptionTier || 'free',
         failedAttempts: s.failedLoginAttempts || 0,
@@ -640,12 +661,22 @@ function getAllUsers({ role = 'all', search = '', page = 1, limit = 40 }) {
   // 2. Format teachers
   if (role === 'all' || role === 'teacher') {
     (teachersStore.teachers || []).forEach(t => {
+      const sch = (t.schoolId && schoolMap[t.schoolId]) ||
+                  (t.schoolName && schoolMap[t.schoolName.toLowerCase().trim()]);
+      const schoolName = sch ? sch.name : (t.schoolName || 'Unassigned School');
+      const schoolCode = sch ? sch.adminCode : null;
+      const schoolDetails = schoolCode
+        ? `${schoolName} (Admin Code: ${schoolCode})`
+        : (t.schoolId || 'School');
+
       combined.push({
         id: t.id,
         role: 'teacher',
         displayName: t.name || 'Mwalimu',
         identifier: t.email || t.phone || t.id,
-        subInfo: `TSC/ID: ${t.idNumber || '—'} • ${t.schoolId || 'School'}`,
+        schoolName,
+        schoolCode,
+        subInfo: `TSC/ID: ${t.idNumber || '—'} • ${schoolDetails}`,
         contact: t.phone || t.email,
         subscriptionTier: 'institutional',
         failedAttempts: t.failedLoginAttempts || 0,

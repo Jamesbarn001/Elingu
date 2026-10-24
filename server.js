@@ -2134,18 +2134,21 @@ app.post('/api/students/profile', async (req, res) => {
 
     const normPhone = authUtils.normalizeKenyanPhone(parentContact);
 
-    // If it's not a valid Kenyan phone number, it must be a valid, genuine email address
+    // If it's not a valid Kenyan phone number, it must be a valid, deliverable email address
     if (!normPhone) {
-      const emailCheck = authUtils.isValidEmail(parentContact);
+      const emailCheck = await authUtils.verifyEmailDeliverable(parentContact);
       if (!emailCheck.valid) {
         return res.status(400).json({ error: emailCheck.error });
       }
     }
 
     if (studentEmail) {
-      const stuEmailCheck = authUtils.isValidEmail(studentEmail);
+      const stuEmailCheck = await authUtils.verifyEmailDeliverable(studentEmail);
       if (!stuEmailCheck.valid) {
         return res.status(400).json({ error: `Student recovery email: ${stuEmailCheck.error}` });
+      }
+      if (!normPhone && studentEmail.trim().toLowerCase() === parentContact.trim().toLowerCase()) {
+        return res.status(400).json({ error: 'Student personal recovery email cannot be identical to the parent or guardian contact.' });
       }
     }
 

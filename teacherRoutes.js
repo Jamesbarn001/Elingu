@@ -1065,7 +1065,8 @@ module.exports = function (options = {}) {
   // POST /api/teacher/login
   router.post('/api/teacher/login', async (req, res) => {
     try {
-      const { identifier, password } = req.body;
+      const identifier = req.body.identifier || req.body.email || req.body.phone;
+      const password = req.body.password;
       if (!identifier || !password) return res.status(400).json({ error: 'Identifier and password are required.' });
       const result = await teacherStore.verifyTeacherLogin(identifier, password);
       if (!result.success) {
@@ -1525,7 +1526,7 @@ Output format: Return ONLY a valid JSON array of question objects with NO markdo
   // POST /api/mission/create
   router.post('/api/mission/create', requireTeacherAuth(), (req, res) => {
     try {
-      const schoolId = req.body.schoolId;
+      const schoolId = req.body.schoolId || req.teacher?.schoolId;
       if (!schoolId) return res.status(400).json({ error: 'schoolId is required.' });
       if (req.teacher.schoolId !== schoolId) {
         return res.status(403).json({ error: 'Forbidden: Cannot push missions to another school.' });

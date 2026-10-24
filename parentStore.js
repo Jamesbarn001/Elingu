@@ -54,7 +54,7 @@ function getParentByEmail(email) {
   const cleanEmail = (email || '').trim().toLowerCase();
   if (!cleanEmail) return null;
   const store = loadJson(PARENTS_FILE, { parents: [] });
-  const parent = store.parents.find(p => p.email === cleanEmail);
+  const parent = findParentInStore(store, cleanEmail);
   if (!parent) return null;
 
   // Auto-check expiration if on pilot
@@ -266,15 +266,31 @@ async function approveChildWithPin(parentEmail, familyPassword, studentId) {
 
   if (!parent) return { success: false, error: 'Parent account not found.' };
   if (!parent.verified) return { success: false, error: 'Parent account not yet verified.' };
-  
-  const isValid = await authUtils.verifyCredential(familyPassword, parent.familyPinHash, 'elingu_parent_salt_2026');
-  if (!isValid) {
-    return { success: false, error: 'Incorrect Family Password.' };
+
+  const lockStatus = authUtils.checkLockout(parent);
+  if (lockStatus.locked) {
+    return { success: false, locked: true, error: `Account temporarily locked. Try again in ${lockStatus.minutesRemaining} minute(s).` };
   }
+  if (lockStatus.expired) {
+    authUtils.clearFailedAttempts(parent);
+  }
+  
+  const cleanPassword = String(familyPassword || '').trim();
+  const isValid = await authUtils.verifyCredential(cleanPassword, parent.familyPinHash, 'elingu_parent_salt_2026');
+  if (!isValid) {
+    const failResult = authUtils.recordFailedAttempt(parent, 'parent');
+    saveJson(PARENTS_FILE, store);
+    if (failResult.locked) {
+      return { success: false, locked: true, error: `Too many failed attempts. Account locked for ${authUtils.PARENT_LOCKOUT_MINUTES} minutes.` };
+    }
+    return { success: false, error: `Incorrect Family Password. ${failResult.attemptsRemaining} attempt(s) remaining.` };
+  }
+
+  authUtils.clearFailedAttempts(parent);
 
   // Auto-migrate legacy SHA-256 hash to bcrypt
   if (authUtils.isLegacyHash(parent.familyPinHash)) {
-    parent.familyPinHash = await authUtils.hashCredential(familyPassword);
+    parent.familyPinHash = await authUtils.hashCredential(cleanPassword);
   }
 
   const pending = parent.pendingChildren.find(c => c.studentId === studentId);
@@ -316,13 +332,25 @@ function findParentInStore(store, identifier) {
   if (!identifier) return null;
   const clean = String(identifier).trim().toLowerCase();
   if (clean.includes('@')) {
-    return store.parents.find(p => p.email === clean);
+    let found = store.parents.find(p => p.email && p.email.toLowerCase() === clean);
+    if (found) return found;
+
+    // Email alias fallback (e.g. burugu.joshua@gmail.com matching mburugu.joshua@gmail.com)
+    const [userPart, domainPart] = clean.split('@');
+    found = store.parents.find(p => {
+      if (!p.email || !p.email.includes('@')) return false;
+      const [pUser, pDomain] = p.email.toLowerCase().split('@');
+      if (pDomain !== domainPart) return false;
+      return (pUser === 'm' + userPart || userPart === 'm' + pUser || pUser.endsWith('.' + userPart) || userPart.endsWith('.' + pUser));
+    });
+    if (found) return found;
+    return null;
   }
   const normPhone = authUtils.normalizeKenyanPhone(clean);
   if (normPhone) {
     return store.parents.find(p => (p.phone && authUtils.normalizeKenyanPhone(p.phone) === normPhone) || p.email === normPhone + '@phone.elingu.local');
   }
-  return store.parents.find(p => p.email === clean);
+  return store.parents.find(p => p.email && p.email.toLowerCase() === clean);
 }
 
 async function verifyFamilyPassword(emailOrPhone, familyPassword) {
@@ -868,6 +896,7 @@ async function purgeChildData(parentEmailOrPhone, childId) {
 }
 
 module.exports = {
+  findParentInStore,
   getParentByEmail,
   findParentByEmail: getParentByEmail,
   getParentByPhone,

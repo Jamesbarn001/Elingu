@@ -2302,7 +2302,8 @@ app.post('/api/students/profile', async (req, res) => {
 // Authenticate / Sign in existing student by nickname or email/phone + PIN
 app.post('/api/students/login', async (req, res) => {
   try {
-    const { handleOrEmail, pin } = req.body;
+    const handleOrEmail = req.body.handleOrEmail || req.body.handle || req.body.identifier;
+    const pin = req.body.pin;
     if (!handleOrEmail || !pin) {
       return res.status(400).json({ error: 'Nickname/Email/Phone and PIN are required.' });
     }
@@ -3314,6 +3315,41 @@ app.get('/parent/approve', (req, res) => {
     `);
   }
 
+  const fs = require('fs');
+  const path = require('path');
+  const parentsPath = path.join(__dirname, 'data', 'parents.json');
+  let matchedParentEmail = '';
+  if (fs.existsSync(parentsPath)) {
+    try {
+      const parentsData = JSON.parse(fs.readFileSync(parentsPath, 'utf8'));
+      const parent = parentsData.parents.find(p =>
+        p.pendingChildren && p.pendingChildren.some(c => c.approveToken === token && c.studentId === child)
+      );
+      if (parent && parent.email) {
+        matchedParentEmail = parent.email;
+      }
+    } catch (e) {}
+  }
+
+  if (!matchedParentEmail) {
+    const rawEmail = (studentRecord && studentRecord.email) || req.query.email || '';
+    if (rawEmail) {
+      const p = parentStore.getParentByEmailOrPhone ? parentStore.getParentByEmailOrPhone(rawEmail) : null;
+      matchedParentEmail = (p && p.email) ? p.email : rawEmail;
+    }
+  }
+
+  let maskedEmail = '';
+  if (matchedParentEmail) {
+    const parts = matchedParentEmail.split('@');
+    if (parts.length === 2) {
+      const name = parts[0];
+      const domain = parts[1];
+      const maskedName = name.length > 2 ? name[0] + '•••' + name[name.length - 1] : name[0] + '•••';
+      maskedEmail = maskedName + '@' + domain;
+    }
+  }
+
   res.send(`
     <!DOCTYPE html>
     <html lang="en">
@@ -3328,11 +3364,11 @@ app.get('/parent/approve', (req, res) => {
         .logo { font-size: 32px; margin-bottom: 8px; }
         h1 { color: #f59e0b; font-size: 22px; margin-bottom: 8px; }
         p { color: #aaa; line-height: 1.6; margin-bottom: 20px; font-size: 14px; }
-        .pwd-input { width: 100%; height: 48px; border: 2px solid #2d1f00; border-radius: 10px; background: #1a2332; color: #fff; font-size: 15px; padding: 0 14px; outline: none; margin: 12px 0; }
+        .pwd-input { width: 100%; height: 48px; border: 2px solid #2d1f00; border-radius: 10px; background: #1a2332; color: #fff; font-size: 15px; padding: 0 14px; outline: none; }
         .pwd-input:focus { border-color: #f59e0b; }
-        button { background: #f59e0b; color: #000; border: none; border-radius: 8px; padding: 14px 32px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px; }
-        button:hover { background: #d97706; }
-        .error { color: #f87171; font-size: 13px; margin-top: 12px; display: none; }
+        button#approveBtn { background: #f59e0b; color: #000; border: none; border-radius: 8px; padding: 14px 32px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px; }
+        button#approveBtn:hover { background: #d97706; }
+        .error { color: #f87171; font-size: 13px; margin-top: 12px; display: none; line-height: 1.4; }
         .badge { font-size: 12px; color: #555; margin-top: 20px; }
       </style>
     </head>
@@ -3340,10 +3376,24 @@ app.get('/parent/approve', (req, res) => {
       <div class="card">
         <div class="logo">🌳</div>
         <h1>Does ${childHandle} belong to your family?</h1>
-        <p>Enter your <strong style="color:#fff;">Family Password</strong> to approve <strong style="color:#fff;">${childHandle}</strong>'s account on Elingu. If you don't recognise this name, simply close this page.</p>
-        <input type="password" id="familyPwdInput" class="pwd-input" placeholder="Enter your Family Password" autocomplete="current-password">
+        <p>Enter your <strong style="color:#fff;">Family Password</strong>${maskedEmail ? ' for <strong style="color:#f59e0b;">' + maskedEmail + '</strong>' : ''} to approve <strong style="color:#fff;">${childHandle}</strong>'s account on Elingu. If you don't recognise this name, simply close this page.</p>
+
+        <div style="position: relative; width: 100%; margin: 14px 0;">
+          <input type="password" id="familyPwdInput" class="pwd-input" placeholder="Enter your Family Password" autocomplete="current-password" style="padding-right: 48px; margin: 0;" onkeyup="if(event.key==='Enter') document.getElementById('approveBtn').click()">
+          <button type="button" id="toggleApprovePwdBtn" onclick="toggleApprovePassword()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; width: auto; margin: 0; padding: 6px; cursor: pointer; font-size: 18px; color: #94A3B8;" title="Show or hide password">👁️</button>
+        </div>
+
         <div class="error" id="errMsg"></div>
         <button id="approveBtn">👤 Approve ${childHandle}</button>
+
+        ${matchedParentEmail ? `
+        <div style="margin-top: 14px;">
+          <a href="/parent/portal?email=${encodeURIComponent(matchedParentEmail)}" style="color: #f59e0b; font-size: 12.5px; text-decoration: underline;">
+            Forgot Family Password? Sign in or reset in Parent Portal 🔑
+          </a>
+        </div>
+        ` : ''}
+
         <div id="successMsg" style="display:none">
           <h2 style="color:#00c896;margin-bottom:8px;">✅ Approved!</h2>
           <p>${childHandle} can now log in to Elingu.</p>
@@ -3352,23 +3402,49 @@ app.get('/parent/approve', (req, res) => {
         <p class="badge">🛡️ Your child's data is safe — Kenya DPA 2019 compliant</p>
       </div>
       <script>
+        function toggleApprovePassword() {
+          var inp = document.getElementById('familyPwdInput');
+          var btn = document.getElementById('toggleApprovePwdBtn');
+          if (inp.type === 'password') {
+            inp.type = 'text';
+            btn.textContent = '🙈';
+          } else {
+            inp.type = 'password';
+            btn.textContent = '👁️';
+          }
+        }
+
         document.getElementById('approveBtn').addEventListener('click', async () => {
           const pwd = (document.getElementById('familyPwdInput').value || '').trim();
           const err = document.getElementById('errMsg');
+          const btn = document.getElementById('approveBtn');
           err.style.display = 'none';
           if (!pwd) { err.textContent='Please enter your Family Password.'; err.style.display='block'; return; }
 
-          const res = await fetch('/api/parent/approve-child', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ approveToken: ${jsApproveToken}, childId: ${jsApproveChild}, familyPassword: pwd, familyPin: pwd })
-          });
-          const data = await res.json();
-          if (data.success) {
-            document.querySelectorAll('.card > *:not(#successMsg)').forEach(el => { el.style.display = 'none'; });
-            document.getElementById('successMsg').style.display='block';
-          } else {
-            err.textContent = data.error || 'Incorrect Family Password. Please try again.';
+          btn.disabled = true;
+          btn.textContent = 'Approving... ⏳';
+
+          try {
+            const res = await fetch('/api/parent/approve-child', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ approveToken: ${jsApproveToken}, childId: ${jsApproveChild}, familyPassword: pwd, familyPin: pwd })
+            });
+            const data = await res.json();
+            btn.disabled = false;
+            btn.textContent = '👤 Approve ${childHandle}';
+
+            if (data.success) {
+              document.querySelectorAll('.card > *:not(#successMsg)').forEach(el => { el.style.display = 'none'; });
+              document.getElementById('successMsg').style.display='block';
+            } else {
+              err.textContent = data.error || 'Incorrect Family Password. Please try again.';
+              err.style.display = 'block';
+            }
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = '👤 Approve ${childHandle}';
+            err.textContent = 'Network error approving child. Please try again.';
             err.style.display = 'block';
           }
         });
@@ -6445,11 +6521,7 @@ app.get('/parent/portal', (req, res) => {
         }
 
         function containsSpecialChar(str) {
-          var specials = '!@#$%^&*()_+-=[]{};\':"|,.<>/?~';
-          for (var i = 0; i < str.length; i++) {
-            if (specials.indexOf(str[i]) !== -1) return true;
-          }
-          return false;
+          return /[^a-zA-Z0-9\s]/.test(str);
         }
 
         async function requestPasswordChangeOTP() {

@@ -9418,6 +9418,15 @@
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => item.classList.remove('active'));
       if (deckNav) deckNav.classList.add('active');
 
+      if (window.innerWidth <= 768) {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar && sidebar.classList.contains('open')) {
+          sidebar.classList.remove('open');
+          const chevron = document.getElementById('menuToggleChevron');
+          if (chevron) chevron.style.transform = 'rotate(0deg)';
+        }
+      }
+
       // 2. Clear log and create Study Deck element
       history = [];
       log.innerHTML = '';
@@ -9620,6 +9629,16 @@
         const isMatch = (itemMeta.key === meta.key) || (itemSubj.toLowerCase() === subject.toLowerCase());
         item.classList.toggle('active', isMatch);
       });
+
+      // Auto-collapse mobile sidebar on selection for crisp mobile viewport
+      if (window.innerWidth <= 768) {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar && sidebar.classList.contains('open')) {
+          sidebar.classList.remove('open');
+          const chevron = document.getElementById('menuToggleChevron');
+          if (chevron) chevron.style.transform = 'rotate(0deg)';
+        }
+      }
 
       // Update header
       const headerTitle = document.querySelector('header h1');
@@ -10343,7 +10362,7 @@
             setGrade(activeStudent.grade, { skipSubjectLoad: true });
           }
           if (authReq === 'chat') {
-            loadStudentSessionForSubject(currentSubject);
+            setSubject(currentSubject);
           } else {
             renderStudyDeck();
           }
@@ -11212,7 +11231,7 @@
 
     function exitMissionMode() {
       currentActiveMission = null;
-      loadStudentSessionForSubject(currentSubject);
+      setSubject(currentSubject);
     }
 
     function openStudentModal() {
@@ -13053,7 +13072,12 @@
               switchSeniorCategory(activeStudent.pathway.toLowerCase());
             }
           }
-          loadStudentSessionForSubject(currentSubject);
+          const isCurrentlyOnHome = document.getElementById('studyDeckView') !== null;
+          if (isCurrentlyOnHome) {
+            renderStudyDeck();
+          } else {
+            setSubject(currentSubject);
+          }
           closeAuthOverlay();
           triggerAchievementNotification({
             title: 'Study Space Updated! 🌳',
@@ -13813,6 +13837,8 @@
 
     function loginLearnerDirectly(student, sessionToken) {
       if (!student) return;
+      isLockedOut = false;
+      document.documentElement.classList.remove('auth-lockout');
       activeStudent = normalizeActiveStudent(student);
       try {
         if (sessionToken) {
@@ -13842,14 +13868,14 @@
         renderStudyDeck();
       } catch (sessErr) {
         console.warn('[loginLearnerDirectly] renderStudyDeck error:', sessErr);
-        loadStudentSessionForSubject(currentSubject);
+        setSubject(currentSubject);
       }
 
       closeAuthOverlay(true);
       triggerAchievementNotification({
-        title: `Welcome back, ${activeStudent.handle}! 🚀`,
+        title: `Welcome, ${activeStudent.handle}! 🚀`,
         points: 10,
-        message: 'Signed in with Google.'
+        message: 'Ready to learn with Elingu.'
       });
 
       // Prompt to complete profile if age or school is missing

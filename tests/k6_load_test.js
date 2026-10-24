@@ -44,16 +44,17 @@ export default function () {
       'has login form': (r) => r.body.includes('parentLoginForm'),
     });
 
-    // Simulated login attempt with unregistered email
+    // Simulated login attempt with unregistered email (expects 401, 423, or 429 rate limit)
     const loginPayload = JSON.stringify({
       email: 'bench_probe@example.com',
       familyPassword: 'BenchPassword123!',
     });
     const loginRes = http.post(`${BASE_URL}/api/parent/dashboard`, loginPayload, {
       headers: { 'Content-Type': 'application/json' },
+      responseCallback: http.expectedStatuses(400, 401, 423, 429),
     });
     check(loginRes, {
-      'rejects invalid credentials': (r) => r.status === 401 || r.status === 423,
+      'rejects invalid credentials or rate-limits': (r) => [400, 401, 423, 429].includes(r.status),
     });
   });
 

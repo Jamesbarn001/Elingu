@@ -6919,7 +6919,7 @@ app.get('/parent/portal', (req, res) => {
             return;
           }
 
-          if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(newPassword)) {
+          if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[^a-zA-Z0-9\s]/.test(newPassword)) {
             fb.style.display = 'block';
             fb.style.background = '#FEF2F2';
             fb.style.color = '#991B1B';

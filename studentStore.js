@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const authUtils = require('./authUtils');
 
 const { DATA_DIR } = require('./dataDir');
+const { SUPPORT_EMAIL } = require('./contactConfig');
 const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const ANALYTICS_FILE = path.join(DATA_DIR, 'analytics.json');
@@ -983,7 +984,7 @@ function updateStudentProfile(id, { grade, county, age, school, avatar, handle, 
     const existingCur = student.curriculum || (isBritishCurriculum(student) ? 'BRITISH' : 'CBC');
     if (existingCur && existingCur !== targetCur && !adminOverride) {
       return {
-        error: 'Curriculum is permanently locked to preserve academic integrity. To request a curriculum transfer, please contact admin via email at support@elingu.com.',
+        error: 'Curriculum is permanently locked to preserve academic integrity. To request a curriculum transfer, please contact admin via email at ' + SUPPORT_EMAIL + '.',
         code: 'CURRICULUM_LOCKED'
       };
     }
@@ -1005,7 +1006,7 @@ function updateStudentProfile(id, { grade, county, age, school, avatar, handle, 
     const newGrade = parseInt(grade, 10);
     if (student.grade && student.grade !== newGrade && !adminOverride) {
       return {
-        error: 'Learner grade is locked to preserve academic continuity and records. To request a grade adjustment or correction, please contact admin via email at support@elingu.com.',
+        error: 'Learner grade is locked to preserve academic continuity and records. To request a grade adjustment or correction, please contact admin via email at ' + SUPPORT_EMAIL + '.',
         code: 'GRADE_LOCKED'
       };
     } else if (!student.grade || adminOverride) {

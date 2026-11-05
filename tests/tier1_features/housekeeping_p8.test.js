@@ -43,6 +43,18 @@ module.exports = {
     ['public/index.html', 'server.js'].forEach(f => ctx.assert(!/placeholder="e\.g\. PILOT2026/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' still shows example codes'));
   },
 
+  'TC-HK-05: One real contact address is shown everywhere, and the landing page makes no unproven claims': async (ctx) => {
+    const { SUPPORT_EMAIL } = require('../../contactConfig');
+    ctx.assert(/@/.test(SUPPORT_EMAIL) && !/support@elingu\./.test(SUPPORT_EMAIL), 'a real address is configured');
+    const root = path.join(__dirname, '..', '..');
+    for (const f of ['server.js', 'studentStore.js', 'public/index.html', 'teacherRoutes.js', 'public/i18n.js']) {
+      ctx.assert(!/support@elingu\.(ke|com)/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' still has an address that is not ours');
+    }
+    const home = await (await fetch(ctx.getBaseUrl() + '/')).text();
+    ctx.assert(home.indexOf(SUPPORT_EMAIL) !== -1, 'the landing page shows the real address');
+    ctx.assert(!/KDPA 2019 Protected|End-to-End Encrypted|Zero-PII|complies fully/i.test(home), 'no unproven security claims on the landing page');
+  },
+
   'TC-HK-04: The daily limit and streak count Kenyan days, not UTC days': async (ctx) => {
     // 22:30 UTC on 4 Nov is already 01:30 on 5 Nov in Kenya
     ctx.assertEqual(studentStore.todayNairobi(new Date('2026-11-04T22:30:00Z')), '2026-11-05');

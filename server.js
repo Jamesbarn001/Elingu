@@ -35,6 +35,7 @@ const gamification = require('./gamification');
 const weeklyCard = require('./weeklyCard');
 const piiGuard = require('./piiGuard');
 const notificationService = require('./notificationService');
+const { SUPPORT_EMAIL } = require('./contactConfig');
 const adminRoutes = require('./adminRoutes');
 
 const app = express();
@@ -6595,7 +6596,7 @@ app.get('/parent/portal', (req, res) => {
               <button type="button" onclick="closeGradeCorrectionModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748B;">✕</button>
             </div>
             <p style="font-size: 13px; color: #4A4A4A; line-height: 1.5; margin: 0 0 16px 0;">
-              🔒 <strong>Academic Integrity Lock:</strong> Grade and curriculum changes are locked to prevent multi-child account cycling. To request an adjustment, submit below or email our academic administration at <a href="mailto:support@elingu.com" style="color: #0D3A26; font-weight: 700; text-decoration: underline;">support@elingu.com</a>.
+              🔒 <strong>Academic Integrity Lock:</strong> Grade and curriculum changes are locked to prevent multi-child account cycling. To request an adjustment, submit below or email our academic administration at <a href="mailto:${SUPPORT_EMAIL}" style="color: #0D3A26; font-weight: 700; text-decoration: underline;">${SUPPORT_EMAIL}</a>.
             </p>
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px; margin-bottom: 16px;">
               <div style="font-size: 12px; color: #64748B;">Learner:</div>
@@ -6638,7 +6639,7 @@ app.get('/parent/portal', (req, res) => {
             <p style="font-size: 13px; color: #4A4A4A; line-height: 1.5; margin: 0 0 16px 0;">
               Select the subjects your child is studying this term. The AI Socratic tutor aligns with Kenya KICD CBC &amp; Cambridge IGCSE learning outcomes.
               <span style="display: block; font-size: 11.5px; color: #64748B; margin-top: 6px; padding: 6px 10px; background: #F1F5F9; border-radius: 6px;">
-                🔒 <strong>Academic Note:</strong> Grade and curriculum are locked to each child's academic profile. For transfers or corrections, please contact admin via email at <a href="mailto:support@elingu.com" style="color: #0D3A26; font-weight: 600;">support@elingu.com</a>.
+                🔒 <strong>Academic Note:</strong> Grade and curriculum are locked to each child's academic profile. For transfers or corrections, please contact admin via email at <a href="mailto:${SUPPORT_EMAIL}" style="color: #0D3A26; font-weight: 600;">${SUPPORT_EMAIL}</a>.
               </span>
             </p>
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px; margin-bottom: 16px;">
@@ -11024,7 +11025,7 @@ app.get(['/', '/portal', '/portals', '/gateway'], (req, res) => {
     </div>
 
     <div class="footer-note">
-      Elingu Educational Technologies • Nairobi, Kenya • <a href="mailto:support@elingu.ke" style="color: #0D3A26; text-decoration: none;">support@elingu.ke</a>
+      Elingu Educational Technologies • Nairobi, Kenya • <a href="mailto:${SUPPORT_EMAIL}" style="color: #0D3A26; text-decoration: none;">${SUPPORT_EMAIL}</a>
     </div>
   </div>
 

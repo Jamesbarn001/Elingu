@@ -113,6 +113,8 @@ Smaller items: distinct subject accent colours in the dark-mode sidebar, a persi
 
 - **Parent emails.** `notificationService.js` sends the Friday summary, receipts and plan reminders. Scheduled ones are off unless `ELINGU_NOTIFICATIONS=on` and capped by `ELINGU_EMAIL_DAILY_CAP`; receipts always go. Each is once-only (state in `data/notifications.json`), summaries carry a signed unsubscribe link, and all content comes from real activity. `scripts/send_test_emails.js` sends 3 sample emails to one address you choose.
 
+- **Contact address.** Families are shown one address, `SUPPORT_EMAIL` (default elingukenya@gmail.com) from `contactConfig.js`. Never type an address into a page or message by hand; use the constant (the static learner page carries the default).
+
 ## Gotchas
 
 - `scratch/` holds one-off patch scripts from earlier agent sessions, and `.agents/teamwork/` holds multi-agent handoff notes. Neither is application code.

@@ -73,6 +73,29 @@ test.describe('Elingu Multi-Portal E2E Test Suite', () => {
       await expect(errorBanner).toBeVisible({ timeout: 5000 });
       await expect(errorBanner).toContainText(/No parent account found/i);
     });
+
+    test('renders Goldilocks 3-option pricing presentation with Termly marked recommended', async ({ page }) => {
+      await page.goto('/parent/portal');
+      const pricingOverview = page.locator('#publicPricingOverview');
+      await expect(pricingOverview).toBeVisible();
+
+      // Ensure 3 primary cards exist
+      const planCards = pricingOverview.locator('.plan-box');
+      await expect(planCards).toHaveCount(3);
+
+      // Verify middle card (index 1) is Termly, highlighted, and recommended
+      const termlyCard = planCards.nth(1);
+      await expect(termlyCard).toHaveClass(/highlight/);
+      await expect(termlyCard).toContainText(/Termly/i);
+      await expect(termlyCard).toContainText(/Recommended/i);
+      await expect(termlyCard).toContainText(/1,199/);
+
+      // Switch to British curriculum and verify pricing updates with middle option recommended
+      const btnBri = page.locator('#btnPublicBri');
+      await btnBri.click();
+      await expect(termlyCard).toContainText(/8,900/);
+      await expect(termlyCard).toContainText(/Recommended/i);
+    });
   });
 
   // 3. TEACHER PORTAL TESTS

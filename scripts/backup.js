@@ -16,7 +16,7 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const DATA_DIR = path.join(ROOT_DIR, 'data');
+const DATA_DIR = require('../dataDir').DATA_DIR;
 
 // Destination is OUTSIDE the git repository to ensure zero exposure
 const VAULT_DIR = path.resolve(ROOT_DIR, '..', '..', 'Elingu_Vault_Backups');

@@ -13,7 +13,7 @@ module.exports = {
     const schoolId = sch.data.school.id;
     const joinCode = sch.data.school.joinCodes['7_East'];
 
-    const teacher = await ctx.api('/api/teacher/register', {
+    const teacher = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Sang',
@@ -93,7 +93,7 @@ module.exports = {
     const schoolId = sch.data.school.id;
     const joinCode = sch.data.school.joinCodes['7_East'];
 
-    const teacher = await ctx.api('/api/teacher/register', {
+    const teacher = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Shitsama',
@@ -167,7 +167,7 @@ module.exports = {
     });
 
     // Teacher 1 creates mission in School 1
-    const teacher1 = await ctx.api('/api/teacher/register', {
+    const teacher1 = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. One',
@@ -194,7 +194,7 @@ module.exports = {
     const missionId = missionRes.data.mission.id;
 
     // Teacher 2 registered in School 2
-    const teacher2 = await ctx.api('/api/teacher/register', {
+    const teacher2 = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Two',
@@ -222,7 +222,7 @@ module.exports = {
     });
     const schoolId = sch.data.school.id;
 
-    const teacher = await ctx.api('/api/teacher/register', {
+    const teacher = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Mutua',
@@ -251,7 +251,7 @@ module.exports = {
     });
     const schoolId = sch.data.school.id;
 
-    const teacher = await ctx.api('/api/teacher/register', {
+    const teacher = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Mwikali',

@@ -5,6 +5,8 @@
 // Exit codes: 0 = All Passed, 1 = Any Failure.
 // ============================================================
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -91,7 +93,12 @@ function stopServer() {
   if (serverSpawnedByRunner && serverProcess) {
     try {
       console.log('\n🛑 Stopping test server...');
-      serverProcess.kill('SIGTERM');
+      if (process.platform === 'win32') {
+        const { execSync } = require('child_process');
+        try { execSync(`taskkill /pid ${serverProcess.pid} /T /F`, { stdio: 'ignore' }); } catch (e) {}
+      } else {
+        serverProcess.kill('SIGTERM');
+      }
     } catch (e) {
       // ignore
     }

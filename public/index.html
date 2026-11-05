@@ -3,17 +3,37 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <script>
+    // Lite mode: lighter visuals for slow networks and low-end phones. Auto-on when the browser says "save data",
+    // the connection is 2G/3G, or the phone has little memory or few cores. A learner can force it on or off in "My Progress".
+    (function () {
+      function auto() {
+        try {
+          var c = navigator.connection || {};
+          return !!(c.saveData || /(^|-)2g$|3g/.test(c.effectiveType || '') || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2));
+        } catch (e) { return false; }
+      }
+      function mode() { try { return localStorage.getItem('elingu_lite') || 'auto'; } catch (e) { return 'auto'; } }
+      function apply() { var on = mode() === 'on' || (mode() === 'auto' && auto()); document.documentElement.classList.toggle('lite', on); return on; }
+      apply();
+      window.ElinguLite = { mode: mode, isOn: function () { return document.documentElement.classList.contains('lite'); },
+        set: function (m) { try { localStorage.setItem('elingu_lite', m); } catch (e) {} return apply(); } };
+    })();
+  </script>
   <title>Elingu — Your Thinking Companion</title>
   <meta name="description"
     content="Elingu is a Socratic thinking companion for Kenyan children. Elimu ni Nguvu — Knowledge is Power." />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+  <link rel="stylesheet" href="/fonts.css">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/explore.css">
+  <link rel="stylesheet" href="/exam.css">
+  <link rel="stylesheet" href="/play.css">
+  <meta name="theme-color" content="#0D3A26">
   <script>
     (function() {
       try {
+        if ('caches' in window) { caches.keys().then(function(keys) { keys.forEach(function(k) { if (k === 'elingu-cache-v1') { caches.delete(k); console.log('[CacheBuster] Purged legacy cache:', k); } }); }); }
         var p = new URLSearchParams(window.location.search);
         var authReq = p.get('auth');
         var sess = sessionStorage.getItem('elingu_student_session');
@@ -366,6 +386,44 @@
       background: rgba(22, 40, 30, 0.95);
       border-color: #4ADE80;
     }
+    /* Header Student Stats Chips */
+    .header-stat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    }
+    .header-stat-chip:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+    }
+    .header-stat-chip.streak-chip {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #D97706;
+    }
+    .header-stat-chip.points-chip {
+      background: rgba(0, 212, 170, 0.12);
+      border: 1px solid rgba(0, 212, 170, 0.35);
+      color: #059669;
+    }
+    body.theme-dark .header-stat-chip.streak-chip {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: rgba(251, 191, 36, 0.4);
+      color: #FBBF24;
+    }
+    body.theme-dark .header-stat-chip.points-chip {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: rgba(74, 222, 128, 0.4);
+      color: #4ADE80;
+    }
+
     body.theme-dark .student-badge-btn {
       background: rgba(17, 30, 22, 0.9);
       border-color: rgba(74, 222, 128, 0.3);
@@ -827,6 +885,1262 @@
     .status-badge.locked {
       background: rgba(107, 79, 58, 0.06);
       color: var(--text-muted);
+    }
+
+    /* ============================================================
+       5-PILLAR APP ARCHITECTURE & DOCK STYLING (MILESTONE 1)
+       ============================================================ */
+    .sidebar-main-tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 16px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--glass-border);
+    }
+
+    .main-nav-tab {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      text-decoration: none;
+      color: var(--text-primary);
+      background: transparent;
+      border: 1.5px solid transparent;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+    .main-nav-tab:hover {
+      background: var(--glass-hover);
+      transform: translateX(2px);
+    }
+    .main-nav-tab.active {
+      background: rgba(0, 212, 170, 0.09);
+      border-color: rgba(0, 212, 170, 0.3);
+      border-left: 3.5px solid #00D4AA;
+      box-shadow: 0 2px 10px rgba(0, 212, 170, 0.08);
+    }
+    body.theme-dark .main-nav-tab.active {
+      background: rgba(74, 222, 128, 0.12);
+      border-color: rgba(74, 222, 128, 0.35);
+      border-left: 3.5px solid #4ADE80;
+      color: #F0FDF4;
+    }
+    .main-tab-icon {
+      font-size: 20px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      flex-shrink: 0;
+    }
+    .main-tab-text {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      flex: 1;
+      min-width: 0;
+    }
+    .main-tab-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      color: var(--text-primary);
+      letter-spacing: -0.2px;
+    }
+    .main-tab-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .main-tab-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: auto;
+    }
+    .main-tab-badge.hq {
+      background: rgba(0, 212, 170, 0.15);
+      color: #059669;
+    }
+    .main-tab-badge.skill {
+      background: rgba(245, 158, 11, 0.15);
+      color: #D97706;
+    }
+    .main-tab-badge.safe {
+      background: rgba(59, 130, 246, 0.15);
+      color: #2563EB;
+    }
+    .main-tab-badge.mission {
+      background: rgba(239, 68, 68, 0.15);
+      color: #DC2626;
+      border-radius: 50%;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Brain Deck Mode Switcher Bar */
+    .brain-deck-mode-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--glass-white);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 6px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+    }
+    body.theme-dark .brain-deck-mode-bar {
+      background: rgba(17, 30, 22, 0.85);
+      border-color: rgba(74, 222, 128, 0.16);
+    }
+    .brain-mode-pill {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .brain-mode-pill:hover {
+      background: var(--glass-hover);
+      color: var(--text-primary);
+    }
+    .brain-mode-pill.active {
+      background: #FFFFFF;
+      border-color: rgba(45, 106, 79, 0.2);
+      color: var(--brand-green);
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+    body.theme-dark .brain-mode-pill.active {
+      background: rgba(74, 222, 128, 0.18);
+      border-color: rgba(74, 222, 128, 0.4);
+      color: #4ADE80;
+    }
+    .brain-mode-pill .mode-icon {
+      font-size: 16px;
+    }
+    .brain-mode-pill .mode-title {
+      font-size: 13.5px;
+      font-weight: 700;
+    }
+    .brain-mode-pill .mode-sub {
+      font-size: 11px;
+      opacity: 0.75;
+      display: none;
+    }
+    @media (min-width: 600px) {
+      .brain-mode-pill .mode-sub {
+        display: inline;
+      }
+    }
+
+    /* Mobile Bottom Dock */
+    .mobile-bottom-dock {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      background: rgba(245, 240, 232, 0.96);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--glass-border);
+      z-index: 95;
+      padding: 6px 8px 10px 8px;
+      justify-content: space-around;
+      align-items: center;
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
+    }
+    body.theme-dark .mobile-bottom-dock {
+      background: rgba(10, 22, 16, 0.96);
+      border-top-color: rgba(74, 222, 128, 0.15);
+    }
+    @media (max-width: 768px) {
+      .mobile-bottom-dock {
+        display: flex;
+      }
+      .chat-area {
+        padding-bottom: 74px !important;
+      }
+    }
+    .dock-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 10px;
+      transition: all 0.18s ease;
+      flex: 1;
+    }
+    .dock-tab.active {
+      color: var(--brand-green);
+    }
+    body.theme-dark .dock-tab.active {
+      color: #4ADE80;
+    }
+    .dock-tab .dock-icon {
+      font-size: 19px;
+      line-height: 1;
+    }
+    .dock-tab .dock-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    /* Expeditions, Safe Box, and Missions Studio Views */
+    .expeditions-view, .safe-box-view, .missions-full-view {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 10px 16px 40px;
+      animation: fadeIn 0.3s ease;
+    }
+    .expeditions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .expedition-card {
+      background: var(--glass-white);
+      border: 1px solid var(--glass-border);
+      border-radius: 18px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+    }
+    .expedition-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.07);
+      border-color: var(--brand-green);
+    }
+    body.theme-dark .expedition-card {
+      background: rgba(17, 30, 22, 0.85);
+      border-color: rgba(74, 222, 128, 0.16);
+    }
+
+    .safe-box-hero {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 20px;
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .breath-box {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      margin: 20px auto;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, rgba(59, 130, 246, 0.15) 70%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      font-weight: 700;
+      color: var(--brand-green);
+      animation: pulseBreath 8s infinite ease-in-out;
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.3);
+    }
+    @keyframes pulseBreath {
+      0%, 100% { transform: scale(0.9); opacity: 0.75; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+    .childline-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: #EF4444;
+      color: #FFFFFF !important;
+      padding: 12px 22px;
+      border-radius: 30px;
+      font-weight: 700;
+      font-size: 14px;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .childline-pill:hover {
+      background: #DC2626;
+      transform: scale(1.03);
+    }
+
+    /* ============================================================
+       METRO-STYLE TOPIC ROADMAP & SPLIT STUDIO (MILESTONE 2)
+       ============================================================ */
+    .metro-roadmap-wrapper {
+      position: relative;
+      padding: 10px 4px 30px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .metro-roadmap-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .metro-roadmap-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .metro-line-track {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    /* Connecting vertical transit line */
+    .metro-line-track::before {
+      content: '';
+      position: absolute;
+      top: 24px;
+      bottom: 24px;
+      left: 27px;
+      width: 4px;
+      background: linear-gradient(180deg, #10B981 0%, #00D4AA 50%, #94A3B8 100%);
+      border-radius: 4px;
+      z-index: 1;
+    }
+    body.theme-dark .metro-line-track::before {
+      background: linear-gradient(180deg, #4ADE80 0%, #059669 50%, #334155 100%);
+    }
+
+    .metro-station-row {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .metro-station-node {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      border: 3px solid #CBD5E1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+      color: #64748B;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+    .metro-station-node:hover {
+      transform: scale(1.1);
+    }
+    .metro-station-node.mastered {
+      background: #10B981;
+      border-color: #059669;
+      color: #FFFFFF;
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+    }
+    .metro-station-node.active {
+      background: #00D4AA;
+      border-color: #059669;
+      color: #FFFFFF;
+      box-shadow: 0 0 18px rgba(0, 212, 170, 0.5);
+      animation: pulseNode 2.5s infinite ease-in-out;
+    }
+    @keyframes pulseNode {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(0, 212, 170, 0.4); }
+      50% { transform: scale(1.08); box-shadow: 0 0 22px rgba(0, 212, 170, 0.7); }
+    }
+    .metro-station-node.locked {
+      background: rgba(226, 232, 240, 0.7);
+      border-color: #CBD5E1;
+      color: #94A3B8;
+      cursor: not-allowed;
+    }
+    body.theme-dark .metro-station-node {
+      background: #1E293B;
+      border-color: #475569;
+      color: #94A3B8;
+    }
+    body.theme-dark .metro-station-node.active {
+      background: #059669;
+      border-color: #4ADE80;
+      color: #FFFFFF;
+    }
+
+    .metro-station-card {
+      flex: 1;
+      background: var(--glass-white);
+      border: 1px solid var(--glass-border);
+      border-radius: 18px;
+      padding: 16px 18px;
+      transition: all 0.22s ease;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+      cursor: pointer;
+    }
+    .metro-station-card:hover {
+      border-color: var(--brand-green);
+      background: #FFFFFF;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+    }
+    body.theme-dark .metro-station-card {
+      background: rgba(17, 30, 22, 0.85);
+      border-color: rgba(74, 222, 128, 0.16);
+    }
+    body.theme-dark .metro-station-card:hover {
+      background: rgba(23, 40, 30, 0.95);
+      border-color: rgba(74, 222, 128, 0.35);
+    }
+
+    .metro-strand-tag {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--brand-green);
+      margin-bottom: 3px;
+    }
+    .metro-station-title {
+      font-size: 15.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+    .metro-station-summary {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    /* Expanding Subtopic Stops */
+    .metro-subtopics-tray {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--glass-border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .metro-subtopic-stop {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(0, 212, 170, 0.05);
+      border: 1px solid rgba(0, 212, 170, 0.18);
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .metro-subtopic-stop:hover {
+      background: rgba(0, 212, 170, 0.12);
+      border-color: #00D4AA;
+      transform: translateX(3px);
+    }
+    body.theme-dark .metro-subtopic-stop {
+      background: rgba(74, 222, 128, 0.06);
+      border-color: rgba(74, 222, 128, 0.18);
+    }
+    body.theme-dark .metro-subtopic-stop:hover {
+      background: rgba(74, 222, 128, 0.14);
+      border-color: #4ADE80;
+    }
+    .metro-stop-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .metro-stop-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #00D4AA;
+      box-shadow: 0 0 8px rgba(0, 212, 170, 0.6);
+      flex-shrink: 0;
+    }
+    .metro-subtopic-stop.completed .metro-stop-dot {
+      background: #10B981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+    }
+    .metro-stop-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .metro-stop-action {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--brand-green);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Split Studio Cockpit (Slide-out Learning Cockpit) */
+    .split-studio-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 780px;
+      margin: 0 auto;
+      animation: fadeIn 0.25s ease;
+    }
+    .split-studio-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--glass-white);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 10px 16px;
+    }
+    .split-back-btn {
+      background: rgba(13, 58, 38, 0.06);
+      border: 1px solid rgba(13, 58, 38, 0.15);
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-primary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .split-back-btn:hover {
+      background: rgba(13, 58, 38, 0.12);
+      border-color: var(--brand-green);
+    }
+
+    /* Concept Primer Card */
+    .concept-primer-card {
+      background: #FFFFFF;
+      border: 1px solid var(--glass-border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+    }
+    body.theme-dark .concept-primer-card {
+      background: rgba(17, 30, 22, 0.9);
+      border-color: rgba(74, 222, 128, 0.2);
+    }
+    .primer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .primer-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--brand-green);
+      background: rgba(0, 212, 170, 0.12);
+      padding: 3px 10px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .primer-title {
+      font-size: 19px;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin: 0 0 4px 0;
+    }
+    .primer-tagline {
+      font-size: 13px;
+      color: var(--brand-green-light);
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .primer-body {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+    .primer-formula-box {
+      background: rgba(0, 212, 170, 0.08);
+      border: 1.5px solid rgba(0, 212, 170, 0.3);
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-family: 'DM Mono', monospace, sans-serif;
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #065F46;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    body.theme-dark .primer-formula-box {
+      background: rgba(74, 222, 128, 0.1);
+      border-color: rgba(74, 222, 128, 0.3);
+      color: #4ADE80;
+    }
+    .primer-realworld {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      background: var(--bg-primary);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    body.theme-dark .primer-realworld {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    /* Socratic Inquiry Card */
+    .socratic-cockpit-card {
+      background: #FFFFFF;
+      border: 1px solid var(--glass-border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+    }
+    body.theme-dark .socratic-cockpit-card {
+      background: rgba(17, 30, 22, 0.9);
+      border-color: rgba(74, 222, 128, 0.2);
+    }
+    .socratic-prompt-bubble {
+      background: linear-gradient(135deg, rgba(0, 212, 170, 0.1) 0%, rgba(45, 106, 79, 0.08) 100%);
+      border-left: 4px solid var(--brand-green);
+      border-radius: 0 14px 14px 0;
+      padding: 14px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      line-height: 1.55;
+      margin-bottom: 16px;
+    }
+    body.theme-dark .socratic-prompt-bubble {
+      background: rgba(74, 222, 128, 0.08);
+      border-left-color: #4ADE80;
+    }
+    .socratic-input-row {
+      display: flex;
+      gap: 10px;
+    }
+    .socratic-input {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1.5px solid var(--glass-border);
+      background: var(--bg-primary);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      color: var(--text-primary);
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    .socratic-input:focus {
+      border-color: var(--brand-green);
+      background: #FFFFFF;
+      box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.12);
+    }
+    body.theme-dark .socratic-input {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(74, 222, 128, 0.2);
+    }
+    body.theme-dark .socratic-input:focus {
+      background: rgba(17, 30, 22, 0.9);
+      border-color: #4ADE80;
+    }
+
+    /* ============================================ */
+    /* REVISION STUDIO & EXAMINER X-RAY STYLES      */
+    /* ============================================ */
+    .revision-studio-wrap {
+      max-width: 760px;
+      margin: 0 auto 30px;
+      animation: fadeIn 0.25s ease;
+    }
+    .revision-header-card {
+      background: #FFFFFF;
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 20px 24px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+    }
+    body.theme-dark .revision-header-card {
+      background: rgba(17, 30, 22, 0.9);
+      border-color: rgba(74, 222, 128, 0.2);
+    }
+    .revision-papers-scroll {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      margin-top: 14px;
+    }
+    .revision-paper-pill {
+      flex-shrink: 0;
+      padding: 10px 16px;
+      border-radius: 14px;
+      background: rgba(13, 58, 38, 0.05);
+      border: 1.5px solid var(--glass-border);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .revision-paper-pill:hover {
+      background: rgba(0, 212, 170, 0.1);
+      border-color: #00D4AA;
+      transform: translateY(-1px);
+    }
+    .revision-paper-pill.active {
+      background: var(--brand-green);
+      border-color: var(--brand-green);
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(45, 106, 79, 0.2);
+    }
+    body.theme-dark .revision-paper-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(74, 222, 128, 0.15);
+      color: #E2E8F0;
+    }
+    body.theme-dark .revision-paper-pill.active {
+      background: #4ADE80;
+      color: #0D3A26;
+      border-color: #4ADE80;
+    }
+
+    .revision-question-card {
+      background: #FFFFFF;
+      border: 1.5px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
+    }
+    body.theme-dark .revision-question-card {
+      background: rgba(17, 30, 22, 0.92);
+      border-color: rgba(74, 222, 128, 0.22);
+    }
+    .revision-meta-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .revision-q-tag {
+      font-size: 12px;
+      font-weight: 700;
+      color: #D97706;
+      background: rgba(245, 158, 11, 0.12);
+      padding: 4px 12px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .revision-marks-badge {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--brand-green);
+      background: rgba(0, 212, 170, 0.14);
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+    .revision-stem-box {
+      font-size: 15.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.6;
+      background: var(--bg-primary);
+      padding: 18px 20px;
+      border-radius: 14px;
+      border-left: 4px solid var(--brand-green);
+      margin-bottom: 16px;
+      white-space: pre-line;
+    }
+    body.theme-dark .revision-stem-box {
+      background: rgba(255, 255, 255, 0.04);
+      border-left-color: #4ADE80;
+      color: #F8FAFC;
+    }
+    .revision-hint-card {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px dashed rgba(245, 158, 11, 0.3);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 18px;
+      font-size: 13px;
+      color: #B45309;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    body.theme-dark .revision-hint-card {
+      background: rgba(245, 158, 11, 0.1);
+      color: #FCD34D;
+    }
+
+    /* Working Pad */
+    .revision-working-label {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .revision-working-textarea {
+      width: 100%;
+      min-height: 110px;
+      border: 1.5px solid var(--glass-border);
+      border-radius: 14px;
+      background: var(--bg-primary);
+      padding: 14px;
+      font-family: 'DM Sans', monospace, sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--text-primary);
+      outline: none;
+      resize: vertical;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+    .revision-working-textarea:focus {
+      border-color: var(--brand-green);
+      background: #FFFFFF;
+      box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.12);
+    }
+    body.theme-dark .revision-working-textarea {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(74, 222, 128, 0.2);
+      color: #F1F5F9;
+    }
+    body.theme-dark .revision-working-textarea:focus {
+      background: rgba(17, 30, 22, 0.95);
+      border-color: #4ADE80;
+    }
+
+    .revision-answer-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 14px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .revision-answer-input {
+      flex: 1;
+      min-width: 200px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1.5px solid var(--glass-border);
+      background: var(--bg-primary);
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      outline: none;
+    }
+    .revision-answer-input:focus {
+      border-color: var(--brand-green);
+      background: #FFFFFF;
+    }
+    body.theme-dark .revision-answer-input {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(74, 222, 128, 0.2);
+      color: #F8FAFC;
+    }
+
+    .revision-actions-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn-xray-toggle {
+      background: rgba(99, 102, 241, 0.1);
+      border: 1.5px solid rgba(99, 102, 241, 0.25);
+      color: #4F46E5;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 10px 18px;
+      border-radius: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .btn-xray-toggle:hover {
+      background: rgba(99, 102, 241, 0.18);
+      border-color: #6366F1;
+      transform: translateY(-1px);
+    }
+    body.theme-dark .btn-xray-toggle {
+      background: rgba(129, 140, 248, 0.15);
+      border-color: rgba(129, 140, 248, 0.35);
+      color: #A5B4FC;
+    }
+
+    /* Examiner X-Ray Card */
+    .examiner-xray-card {
+      background: linear-gradient(145deg, #FAF5FF 0%, #F5F3FF 100%);
+      border: 1.5px solid #C4B5FD;
+      border-radius: 18px;
+      padding: 22px;
+      margin-top: 20px;
+      animation: fadeIn 0.3s ease;
+    }
+    body.theme-dark .examiner-xray-card {
+      background: rgba(30, 27, 75, 0.6);
+      border-color: rgba(167, 139, 250, 0.35);
+    }
+    .xray-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .xray-tag {
+      font-size: 11.5px;
+      font-weight: 800;
+      color: #6D28D9;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    body.theme-dark .xray-tag {
+      color: #C4B5FD;
+    }
+    .xray-rubric-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 8px;
+      margin-bottom: 14px;
+    }
+    .xray-rubric-row {
+      background: #FFFFFF;
+      border: 1px solid rgba(196, 181, 253, 0.4);
+      border-radius: 10px;
+    }
+    body.theme-dark .xray-rubric-row {
+      background: rgba(17, 24, 39, 0.7);
+      border-color: rgba(167, 139, 250, 0.2);
+    }
+    .xray-code-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      font-family: monospace;
+      letter-spacing: 0.5px;
+    }
+    .xray-code-badge.m {
+      background: #DBEAFE;
+      color: #1E40AF;
+    }
+    .xray-code-badge.a {
+      background: #DCFCE7;
+      color: #166534;
+    }
+    .xray-code-badge.b {
+      background: #FEF3C7;
+      color: #92400E;
+    }
+    .xray-keyword-pill {
+      display: inline-block;
+      background: rgba(13, 58, 38, 0.08);
+      color: var(--text-primary);
+      padding: 3px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    body.theme-dark .xray-keyword-pill {
+      background: rgba(255, 255, 255, 0.08);
+      color: #F1F5F9;
+    }
+    .xray-pitfall-alert {
+      background: rgba(239, 68, 68, 0.08);
+      border-left: 4px solid #EF4444;
+      border-radius: 0 10px 10px 0;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: #B91C1C;
+      line-height: 1.5;
+      margin-top: 12px;
+    }
+    body.theme-dark .xray-pitfall-alert {
+      background: rgba(239, 68, 68, 0.15);
+      color: #FCA5A5;
+    }
+
+    /* Evaluation Result Card */
+    .eval-result-card {
+      background: #FFFFFF;
+      border: 1.5px solid var(--brand-green);
+      border-radius: 16px;
+      padding: 18px 22px;
+      margin-top: 18px;
+      animation: fadeIn 0.25s ease;
+    }
+    body.theme-dark .eval-result-card {
+      background: rgba(17, 30, 22, 0.95);
+      border-color: #4ADE80;
+    }
+    .eval-score-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .eval-score-num {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--brand-green);
+    }
+    body.theme-dark .eval-score-num {
+      color: #4ADE80;
+    }
+
+    /* Desktop 2-Pane Split Exam Desk */
+    .revision-desk-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    @media (min-width: 900px) {
+      .revision-desk-layout {
+        display: grid;
+        grid-template-columns: 1fr 1.15fr;
+        gap: 24px;
+        align-items: start;
+      }
+    }
+    .revision-desk-left {
+      display: flex;
+      flex-direction: column;
+    }
+    .revision-desk-right {
+      display: flex;
+      flex-direction: column;
+    }
+    /* Working Mode Switcher */
+    .working-mode-toggle {
+      display: inline-flex;
+      background: var(--bg-primary);
+      border: 1.5px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 3px;
+      margin-bottom: 12px;
+      gap: 4px;
+      align-self: flex-start;
+    }
+    .working-mode-btn {
+      border: none;
+      background: transparent;
+      padding: 7px 14px;
+      border-radius: 9px;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .working-mode-btn.active {
+      background: #FFFFFF;
+      color: #0D3A26;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    body.theme-dark .working-mode-btn.active {
+      background: #4ADE80;
+      color: #0B1612;
+    }
+    /* Quick Math Ribbon */
+    .quick-math-ribbon {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 6px 10px;
+      background: var(--bg-primary);
+      border-radius: 10px;
+      border: 1px solid var(--glass-border);
+    }
+    .quick-math-sym-btn {
+      background: #FFFFFF;
+      border: 1px solid var(--glass-border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-family: monospace, sans-serif;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .quick-math-sym-btn:hover {
+      background: var(--brand-green);
+      color: #0D3A26;
+      border-color: var(--brand-green);
+      transform: translateY(-1px);
+    }
+    body.theme-dark .quick-math-sym-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: #E2E8F0;
+    }
+    body.theme-dark .quick-math-sym-btn:hover {
+      background: #4ADE80;
+      color: #0B1612;
+    }
+    /* Physical Notebook Banner */
+    .notebook-mode-banner {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(251, 191, 36, 0.04) 100%);
+      border: 1.5px dashed #F59E0B;
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    body.theme-dark .notebook-mode-banner {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: #FBBF24;
+    }
+
+    /* ============================================ */
+    /* SAVE-MY-EXAMS PROGRESSIVE ONBOARDING STYLES  */
+    /* ============================================ */
+    .progressive-onboarding-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin: 16px 0;
+    }
+    @media (max-width: 580px) {
+      .progressive-onboarding-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .progressive-curr-card {
+      border: 2px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 16px;
+      background: #FFFFFF;
+      cursor: pointer;
+      transition: all 0.22s ease;
+      text-align: left;
+    }
+    .progressive-curr-card:hover {
+      border-color: var(--brand-green);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
+    }
+    .progressive-curr-card.selected {
+      border-color: var(--brand-green);
+      background: rgba(0, 212, 170, 0.06);
+      box-shadow: 0 0 0 2px var(--brand-green);
+    }
+    body.theme-dark .progressive-curr-card {
+      background: rgba(17, 30, 22, 0.85);
+      border-color: rgba(74, 222, 128, 0.2);
+    }
+    body.theme-dark .progressive-curr-card.selected {
+      border-color: #4ADE80;
+      box-shadow: 0 0 0 2px #4ADE80;
+    }
+    .progressive-instant-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #059669 0%, #0D3A26 100%);
+      color: #FFFFFF;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14.5px;
+      font-weight: 700;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px rgba(5, 150, 105, 0.25);
+    }
+    .progressive-instant-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(5, 150, 105, 0.35);
+    }
+    .offline-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 10px;
+      background: rgba(16, 185, 129, 0.12);
+      color: #059669;
+    }
+    body.theme-dark .offline-status-pill {
+      background: rgba(74, 222, 128, 0.15);
+      color: #4ADE80;
     }
 
     /* Grade Selector Pills */
@@ -4552,10 +5866,136 @@
       }
       try { sessionStorage.setItem('elingu_intro_seen', 'true'); } catch(err) {}
     }
-    // Auto-dismiss within 1.5s maximum on any initial page view
-    setTimeout(dismissSplashScreen, 1500);
+    // Auto-dismiss within 1.5s maximum on any initial page view (not at all in lite mode)
+    if (document.documentElement.classList.contains('lite')) dismissSplashScreen(); else setTimeout(dismissSplashScreen, 1500);
   </script>
-</head>
+
+  <style>
+    /* ============================================ */
+    /* SPACE ENGINE & MY SAVED SPACES STYLES        */
+    /* ============================================ */
+    .space-action-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .space-action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: 'DM Sans', sans-serif;
+      border: 1px solid transparent;
+      text-decoration: none;
+    }
+    .space-save-btn {
+      background: rgba(16, 185, 129, 0.12);
+      color: #059669;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .space-save-btn:hover {
+      background: rgba(16, 185, 129, 0.22);
+      border-color: #059669;
+      transform: translateY(-1px);
+    }
+    .space-new-btn {
+      background: rgba(13, 58, 38, 0.06);
+      color: var(--text-primary);
+      border-color: var(--glass-border);
+    }
+    .space-new-btn:hover {
+      background: rgba(13, 58, 38, 0.12);
+      border-color: var(--brand-green);
+      transform: translateY(-1px);
+    }
+    body.theme-dark .space-save-btn {
+      background: rgba(74, 222, 128, 0.15);
+      color: #4ADE80;
+      border-color: rgba(74, 222, 128, 0.35);
+    }
+    body.theme-dark .space-new-btn {
+      background: rgba(255, 255, 255, 0.06);
+      color: #E2E8F0;
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    .space-reminder-toast {
+      background: #FFFFFF;
+      border: 1px solid var(--glass-border);
+      border-left: 4px solid var(--brand-green);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      animation: fadeIn 0.25s ease;
+    }
+    body.theme-dark .space-reminder-toast {
+      background: #11281A;
+      border-color: rgba(74, 222, 128, 0.2);
+    }
+    .saved-spaces-wrap {
+      max-width: 840px;
+      margin: 0 auto 30px;
+      animation: fadeIn 0.25s ease;
+    }
+    .saved-spaces-header {
+      background: #FFFFFF;
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+    }
+    body.theme-dark .saved-spaces-header {
+      background: #0E2417;
+      border-color: rgba(74, 222, 128, 0.15);
+    }
+    .spaces-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .space-card {
+      background: #FFFFFF;
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 18px;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.02);
+    }
+    .space-card:hover {
+      border-color: var(--brand-green);
+      box-shadow: 0 4px 16px rgba(13, 58, 38, 0.08);
+      transform: translateY(-2px);
+    }
+    body.theme-dark .space-card {
+      background: #11281A;
+      border-color: rgba(74, 222, 128, 0.12);
+    }
+    .main-nav-tab-badge.vault {
+      background: rgba(13, 58, 38, 0.08);
+      color: var(--brand-green);
+      border: 1px solid rgba(13, 58, 38, 0.15);
+    }
+    body.theme-dark .main-nav-tab-badge.vault {
+      background: rgba(74, 222, 128, 0.12);
+      color: #4ADE80;
+      border-color: rgba(74, 222, 128, 0.3);
+    }
+
+  </style>
+  </head>
 
 <body>
   <!-- ANIMATED TYPOGRAPHIC WORDMARK LOADER (elingu) -->
@@ -4592,7 +6032,7 @@
           </button>
         </div>
         <div class="sidebar-brand">
-          <img src="/elingu-avatar.png" alt="Elingu Logo" class="sidebar-logo-img" />
+          <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Logo" class="sidebar-logo-img" />
         </div>
         <div class="sidebar-tagline">Elimu ni Nguvu</div>
         <div class="sidebar-keywords">
@@ -4605,15 +6045,22 @@
       </div>
 
       <nav class="sidebar-nav">
-        <!-- ════ 1. DEDICATED HOME / SANCTUARY NAVIGATION ════ -->
-        <a href="#" class="nav-item active" id="nav-study-deck" data-subject="__deck__" onclick="event.preventDefault(); renderStudyDeck();" style="margin-bottom: 12px; border-radius: 14px; font-weight: 700; background: rgba(0, 212, 170, 0.08); border-left: 3.5px solid #00D4AA; padding: 11px 14px; display: flex; align-items: center; gap: 10px;">
-          <span class="nav-icon" style="font-size: 19px;">🏠</span>
-          <span class="nav-text" style="font-weight: 700; font-size: 14px; color: var(--text-primary);">Home</span>
-          <span class="status-badge active" style="margin-left: auto; background: rgba(0,212,170,0.15); color: #059669; font-weight: 700;">HQ</span>
-        </a>
+        <!-- ════ 5-PILLAR PRIMARY APPLICATION NAVIGATION ════ -->
+        
+        <!-- ════ PRIMARY NAVIGATION: BRAIN DECK & MY SAVED SPACES ════ -->
+        <div class="sidebar-main-tabs" id="sidebarPrimaryTabs" style="margin-bottom: 10px; padding-bottom: 0; border-bottom: none;">
+          <a href="#" class="main-nav-tab active" id="tab-brain-deck" data-subject="__deck__" onclick="event.preventDefault(); switchMainTab('brain-deck');">
+            <span class="main-tab-icon">🧠</span>
+            <div class="main-tab-text">
+              <div class="main-tab-title">Brain Deck</div>
+              <div class="main-tab-sub">Learn & Revision</div>
+            </div>
+            <span class="main-tab-badge hq">HQ</span>
+          </a>
+        </div>
 
-        <!-- Personalized Academic Grade Badge -->
-        <div id="sidebarAcademicBadge" style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 16px; padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+        <!-- Personalized Academic Grade Badge (Context for Brain Deck & Subjects) -->
+        <div id="sidebarAcademicBadge" style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 16px; padding: 10px 14px; margin-top: 4px; margin-bottom: 14px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
           <div style="display: flex; align-items: center; gap: 9px;">
             <span id="sidebarAcademicIcon" style="font-size: 19px;">🎒</span>
             <div>
@@ -4623,7 +6070,7 @@
           </div>
         </div>
 
-        <div style="height: 1px; background: var(--glass-border); margin: 0 0 14px 0;"></div>
+
 
         <!-- Hidden containers kept for script references -->
         <div id="tab-level-jss" style="display: none;"></div>
@@ -4798,6 +6245,67 @@
           <div id="sub-missions-virtual-lab" class="subject-mission-slot" style="display: none;"></div>
         </div>
 
+        <!-- My Spaces Tab (Child of Brain Deck / Subjects area) -->
+        <div class="sidebar-saved-spaces-anchor" style="margin-top: 12px; margin-bottom: 4px;">
+          <a href="#" class="main-nav-tab" id="tab-saved-spaces" onclick="event.preventDefault(); switchMainTab('saved-spaces');">
+            <span class="main-tab-icon">🌌</span>
+            <div class="main-tab-text">
+              <div class="main-tab-title">My Spaces</div>
+              <div class="main-tab-sub" id="savedSpacesDailySub">0/1 daily space</div>
+            </div>
+            <span class="main-tab-badge vault" id="savedSpacesBadge">Vault</span>
+          </a>
+        </div>
+
+      
+        <!-- ════ EXPLORE & WELLBEING SECONDARY NAVIGATION ════ -->
+        <div style="height: 1px; background: var(--glass-border); margin: 16px 0 12px 0;"></div>
+        <div class="sidebar-section-title" style="margin-bottom: 8px;">Explore & Support</div>
+
+        <div class="sidebar-main-tabs" id="sidebarMainTabs">
+          <a href="#" class="main-nav-tab" id="tab-expeditions" onclick="event.preventDefault(); switchMainTab('expeditions');">
+            <span class="main-tab-icon">🧭</span>
+            <div class="main-tab-text">
+              <div class="main-tab-title">Expeditions</div>
+              <div class="main-tab-sub">Coding, Chess & Money</div>
+            </div>
+            <span class="main-tab-badge skill">Adventures</span>
+          </a>
+
+          <a href="#" class="main-nav-tab" id="tab-safe-box" onclick="event.preventDefault(); switchMainTab('safe-box');">
+            <span class="main-tab-icon">🛡️</span>
+            <div class="main-tab-text">
+              <div class="main-tab-title">SafeBox</div>
+              <div class="main-tab-sub">Wellbeing & 116</div>
+            </div>
+            <span class="main-tab-badge safe">Safe</span>
+          </a>
+
+          <a href="#" class="main-nav-tab" id="tab-missions" onclick="event.preventDefault(); switchMainTab('missions');">
+            <span class="main-tab-icon">🎯</span>
+            <div class="main-tab-text">
+              <div class="main-tab-title">Missions</div>
+              <div class="main-tab-sub">Homework & Quests</div>
+            </div>
+            <span class="main-tab-badge mission" id="mainTabMissionBadge">0</span>
+          </a>
+
+          <a href="#" class="main-nav-tab" id="tab-me" onclick="event.preventDefault(); switchMainTab('me');">
+            <span class="main-tab-icon">⭐</span>
+            <div class="main-tab-text">
+              <div class="main-tab-title">My Progress</div>
+              <div class="main-tab-sub">XP, goals & badges</div>
+            </div>
+          </a>
+
+          <a href="#" class="main-nav-tab" id="tab-custom-spot" onclick="event.preventDefault(); switchMainTab('custom-spot');">
+            <span class="main-tab-icon">⚙️</span>
+            <div class="main-tab-text">
+              <div class="main-tab-title">Custom Spot</div>
+              <div class="main-tab-sub">Avatar & Themes</div>
+            </div>
+          </a>
+        </div>
       </nav>
 
       <div class="sidebar-divider"></div>
@@ -4862,9 +6370,22 @@
             <span id="themeToggleIcon" style="font-size: 1.15rem; line-height: 1;">🌙</span>
           </button>
 
-          <!-- STUDENT PROFILE SWITCHER WIDGET (CIRCULAR PROFILE BUTTON) -->
-          <button class="student-badge-btn" id="studentBadgeBtn" onclick="openStudentModal()" title="View Account & Study Space" aria-label="Account & Profile" style="margin-left: 0;">
-            <span id="activeStudentAvatar" style="font-size: 1.25rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">🦁</span>
+          <!-- VISIBLE STREAKS & POINTS DISPLAY IN TOP HEADER -->
+          <div class="header-student-stats-chips" id="headerStudentStats" style="display: flex; align-items: center; gap: 8px;">
+            <div class="header-stat-chip streak-chip" title="Daily Learning Streak">
+              <span class="stat-icon" style="font-size: 1rem; line-height: 1;">🔥</span>
+              <span id="headerStreakNum" style="font-weight: 800; font-size: 0.9rem;">1</span>
+              <span class="stat-lbl" style="font-size: 0.75rem; font-weight: 600; opacity: 0.9;">Day</span>
+            </div>
+            <div class="header-stat-chip points-chip" title="Curiosity & Mastery Points">
+              <span class="stat-icon" style="font-size: 1rem; line-height: 1;">⭐</span>
+              <span id="headerPointsNum" style="font-weight: 800; font-size: 0.9rem;">150</span>
+              <span class="stat-lbl" style="font-size: 0.75rem; font-weight: 600; opacity: 0.9;">Pts</span>
+            </div>
+          </div>
+          <!-- Hidden compatibility stub for studentBadgeBtn -->
+          <button class="student-badge-btn" id="studentBadgeBtn" style="display: none;" aria-hidden="true" title="Student Profile">
+            <span id="activeStudentAvatar">🦁</span>
           </button>
         </div>
       </header>
@@ -4874,7 +6395,7 @@
         <div class="welcome-container" id="welcomeContainer">
           <div class="welcome-header">
             <div class="welcome-avatar-wrapper">
-              <img src="/elingu-avatar.png" alt="Elingu Logo" class="large-avatar" />
+              <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Logo" class="large-avatar" />
             </div>
             <h2 id="welcomeGreeting">Jambo! I'm Elingu 🌳</h2>
             <p id="welcomeDesc">Let's make Grade 6 Maths your superpower today. Pick a quest below to start, or type your own question!</p>
@@ -4963,6 +6484,30 @@
         </form>
       </div>
     </main>
+
+    <!-- MOBILE BOTTOM DOCK (< 768px): the five things a learner actually does -->
+    <nav class="mobile-bottom-dock" id="mobileBottomDock" aria-label="Main">
+      <button type="button" class="dock-tab active" id="dock-brain-deck" onclick="switchMainTab('learn')">
+        <span class="dock-icon" aria-hidden="true">🧠</span>
+        <span class="dock-label">Learn</span>
+      </button>
+      <button type="button" class="dock-tab" id="dock-practice" onclick="switchMainTab('practice')">
+        <span class="dock-icon" aria-hidden="true">📝</span>
+        <span class="dock-label">Practice</span>
+      </button>
+      <button type="button" class="dock-tab" id="dock-missions" onclick="switchMainTab('missions')">
+        <span class="dock-icon" aria-hidden="true">🎯</span>
+        <span class="dock-label">Missions</span>
+      </button>
+      <button type="button" class="dock-tab" id="dock-explore" onclick="switchMainTab('explore')">
+        <span class="dock-icon" aria-hidden="true">🧭</span>
+        <span class="dock-label">Explore</span>
+      </button>
+      <button type="button" class="dock-tab" id="dock-me" onclick="switchMainTab('me')">
+        <span class="dock-icon" aria-hidden="true">⭐</span>
+        <span class="dock-label">Me</span>
+      </button>
+    </nav>
   </div>
 
   <!-- FIGMA AUTH & ONBOARDING FULL-SCREEN PORTAL -->
@@ -5031,7 +6576,7 @@
           <!-- Logo with radial glow: Fade in 800ms -->
           <div class="auth-anim-logo">
             <div class="auth-logo-glow-wrap">
-              <img src="/elingu-avatar.png" alt="Elingu Circuit-Tree Logo" class="auth-hero-logo" />
+              <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Circuit-Tree Logo" class="auth-hero-logo" />
             </div>
           </div>
 
@@ -5053,13 +6598,7 @@
           </p>
         </div>
 
-        <!-- Trust badge: pinned to bottom -->
-        <div class="auth-trust-badge auth-anim-badge">
-          <svg viewBox="0 0 24 24">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          </svg>
-          <span>Your data is safe</span>
-        </div>
+
       </div>
 
       <!-- RIGHT FORM PANEL (60% width, #FAF7F2) -->
@@ -5069,6 +6608,7 @@
         <div id="authFormContentWrapper">
           
           <!-- TOP TOGGLE TABS: "Sign Up" | "Log In" -->
+          <div data-lang-slot style="display: flex; justify-content: flex-end; margin-bottom: 10px;"></div>
           <div class="auth-tabs-header">
             <button type="button" class="auth-tab-btn active" id="tabBtnSignUp" onclick="setAuthTab('signup')">Sign Up</button>
             <button type="button" class="auth-tab-btn" id="tabBtnLogIn" onclick="setAuthTab('login')">Log In</button>
@@ -5104,7 +6644,8 @@
               </div>
 
               <!-- AVATAR SELECTION & CREATOR -->
-              <div class="avatar-selection-wrapper">
+              <details class="avatar-selection-wrapper" style="margin-bottom: 14px;">
+                <summary style="cursor: pointer; font-weight: 700; font-size: 13px; color: #0D3A26; min-height: 44px; display: flex; align-items: center;">🎨 Choose an avatar (optional, you can change it later)</summary>
                 <label style="font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 13px; color: #0D3A26; display: block; margin-bottom: 6px;">
                   Choose or Create Your Avatar ✨
                 </label>
@@ -5130,7 +6671,7 @@
                   <span style="font-size: 12px; color: #64748B; font-weight: 600;">Or type your own emoji/icon:</span>
                   <input type="text" id="signUpCustomAvatarInput" class="avatar-custom-input" placeholder="🌟" maxlength="4" oninput="handleCustomSignUpAvatarInput(this.value)" />
                 </div>
-              </div>
+              </details>
 
               <!-- CURRICULUM SELECTOR (CBC vs BRITISH) -->
               <div class="auth-field-group">
@@ -5146,29 +6687,25 @@
                 <span class="auth-field-hint" id="signupCurriculumHint">Kenyan Competency-Based Education (Junior Secondary & Senior School).</span>
               </div>
 
-              <div class="auth-field-group">
-                <label for="figmaRealName">2. Learner Real Name <span style="color:#DC2626;">*</span></label>
-                <input type="text" id="figmaRealName" class="auth-field-input" placeholder="e.g. Amani Mwangi" required maxlength="50" oninput="saveSignUpDraft()" />
-                <span class="auth-field-hint">Your full legal name for academic records, teacher reports, and family verification.</span>
-              </div>
+              <input type="hidden" id="figmaRealName" value="" />
 
               <div class="auth-field-group">
-                <label for="figmaNickname">3. Choose a Nickname (Chat Display Handle) <span style="color:#DC2626;">*</span></label>
+                <label for="figmaNickname">2. Choose a Nickname <span style="color:#DC2626;">*</span></label>
                 <input type="text" id="figmaNickname" class="auth-field-input" placeholder="e.g. Amani, Simba, Chebet" required maxlength="20" oninput="saveSignUpDraft()" />
-                <span class="auth-field-hint">A friendly handle shown in learning chats and quests to keep your online avatar private.</span>
+                <span class="auth-field-hint">This is the only name Elingu shows. Use letters, numbers, spaces, dots or dashes. Please don't use your full name.</span>
               </div>
 
               <div class="auth-field-group">
-                <label for="figmaPassword">4. Password or 4-Digit PIN <span style="color:#DC2626;">*</span></label>
+                <label for="figmaPassword">3. Choose a 4-Digit PIN <span style="color:#DC2626;">*</span></label>
                 <div class="auth-input-wrapper">
-                  <input type="password" id="figmaPassword" class="auth-field-input" placeholder="e.g. 4-digit PIN (2443) or password (Star1!)" required minlength="4" maxlength="32" oninput="saveSignUpDraft()" />
+                  <input type="password" id="figmaPassword" class="auth-field-input" placeholder="4 numbers, e.g. 2483" required minlength="4" maxlength="32" oninput="saveSignUpDraft()" />
                   <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('figmaPassword')" aria-label="Toggle password visibility">👁️</button>
                 </div>
                 <span class="auth-field-hint">Either a 4-digit numeric PIN, or a password with at least 6 characters (1 letter, 1 number, and 1 special symbol like Star1!).</span>
               </div>
 
               <div class="auth-field-group">
-                <label for="figmaEmail">5. Parent or Guardian Email or Mobile Phone <span style="color:#DC2626;">*</span></label>
+                <label for="figmaEmail">4. Parent or Guardian Email or Mobile <span style="color:#DC2626;">*</span></label>
                 <input
                   type="text"
                   id="figmaEmail"
@@ -5178,7 +6715,7 @@
                   onblur="checkEmailFamilyAccount(this.value); saveSignUpDraft();"
                   oninput="saveSignUpDraft()"
                 />
-                <span class="auth-field-hint">Required for guardian consent notices, PIN recovery & progress reports.</span>
+                <span class="auth-field-hint">We send them one message to approve your account. Until they do, the tutor stays locked.</span>
 
                 <!-- Inline family-account notice — shown when contact is already registered -->
                 <div id="emailFamilyNotice" style="display:none; margin-top: 10px; background: #ECFDF5; border: 1px solid #6EE7B7; border-radius: 10px; padding: 12px 14px; gap: 10px; align-items: flex-start; font-family: 'DM Sans', sans-serif;">
@@ -5195,8 +6732,9 @@
               </div>
 
               <!-- OPTIONAL STUDENT RECOVERY FIELD -->
-              <div class="auth-field-group">
-                <label for="figmaStudentRecovery">4. Your Personal Email or Phone <span style="font-size: 11.5px; font-weight: 400; color: #6B7280;">(Optional — for PIN recovery)</span></label>
+              <details class="auth-field-group" style="margin-bottom: 14px;">
+                <summary style="cursor: pointer; font-weight: 700; font-size: 13px; color: #0D3A26; min-height: 44px; display: flex; align-items: center;">Optional: add my own email or phone for PIN recovery</summary>
+                <label for="figmaStudentRecovery" style="margin-top: 6px;">Your personal email or phone</label>
                 <input
                   type="text"
                   id="figmaStudentRecovery"
@@ -5205,13 +6743,16 @@
                   oninput="saveSignUpDraft()"
                 />
                 <span class="auth-field-hint">If provided, we will send your PIN reset codes directly to you instead of your parent.</span>
-              </div>
+              </details>
 
               <div class="auth-consent-group">
                 <label class="auth-checkbox-label">
-                  <input type="checkbox" id="parentConsentCheckbox" required checked onchange="saveSignUpDraft()" />
-                  <span>I confirm I have parent or guardian permission to learn on Elingu.</span>
+                  <input type="checkbox" id="parentConsentCheckbox" required onchange="saveSignUpDraft()" />
+                  <span>I have told my parent or guardian that I am joining Elingu, and I have read the <a href="/privacy" target="_blank" rel="noopener">privacy notice</a>.</span>
                 </label>
+                <div style="font-size: 12.5px; color: #047857; margin-top: 6px; line-height: 1.5;">
+                  Your parent or guardian must say yes before you can use the tutor (Kenya Data Protection Act 2019, section 33). We will message them now, and we keep a record of when they approve.
+                </div>
               </div>
 
               <button type="button" class="btn-auth-primary" id="btnGoToStep2" onclick="goToSignUpStep2()">
@@ -5405,16 +6946,11 @@
 
               <div class="auth-field-group">
                 <label for="step2PilotCode" id="step2PilotCodeLabel">🔑 Pilot or Access Code (Optional)</label>
-                <input type="text" id="step2PilotCode" class="auth-field-input" placeholder="e.g. PILOT2026, PARENT2026, TRIAL30" style="text-transform: uppercase;" oninput="saveSignUpDraft()" />
+                <input type="text" id="step2PilotCode" class="auth-field-input" placeholder="Enter your code" style="text-transform: uppercase;" oninput="saveSignUpDraft()" />
                 <span class="auth-field-hint">Have a school or family trial code? Enter it to unlock full CBE access.</span>
               </div>
 
-              <div class="auth-brief-safety-badge">
-                <svg viewBox="0 0 24 24">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                <span>Your data is safe</span>
-              </div>
+
 
               <div style="display: flex; gap: 10px; margin-top: 14px;">
                 <button type="button" class="btn-figma-secondary" onclick="goToSignUpStep1()" style="flex: 0.35; margin: 0; height: 50px;">
@@ -5473,11 +7009,6 @@
                 <span>Continue Learning →</span>
               </button>
 
-              <!-- Remember Me Checkbox -->
-              <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #555555; font-family: 'DM Sans', sans-serif;">
-                <input type="checkbox" id="rememberMe" checked style="accent-color: #0D3A26; cursor: pointer; width: 15px; height: 15px;" />
-                <label for="rememberMe" style="cursor: pointer; user-select: none; margin: 0; font-size: 13px; color: #555555; font-weight: 400;">Remember me for 30 days</label>
-              </div>
             </form>
 
             <!-- COLLAPSIBLE STUDENT 2FA PIN RESET CONTAINER -->
@@ -5539,7 +7070,7 @@
         <!-- FULL-PANEL SUCCESS MOMENT -->
         <div class="auth-success-screen" id="authSuccessScreen">
           <div class="auth-success-logo-wrap">
-            <img src="/elingu-avatar.png" alt="Elingu Tree" />
+            <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Tree" />
           </div>
           <p class="auth-success-msg" id="authSuccessMsg">
             Welcome to Elingu, Amani! 🌱<br>
@@ -5608,7 +7139,7 @@
 
           <div class="approval-safe-badge">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            <span>Protected under Kenya Data Protection Act 2019</span>
+            <span>How we use your data: <a href="/privacy" target="_blank" rel="noopener">privacy notice</a></span>
           </div>
         </div>
 
@@ -5623,7 +7154,7 @@
 
       <div style="text-align: center;">
         <div class="auth-modal-logo">
-          <img src="/elingu-avatar.png" alt="Elingu Logo" />
+          <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Logo" />
         </div>
         <h2 class="auth-modal-title" id="customLearnerTitle">Account & Study Space 🌳</h2>
         <p class="auth-modal-sub" id="customLearnerSub">View and update your learner profile</p>
@@ -5767,12 +7298,22 @@
         </div>
       </div>
 
-      <!-- Brief Data Safety Badge -->
-      <div class="auth-brief-safety-badge" style="margin-bottom: 12px;">
-        <svg viewBox="0 0 24 24">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-        </svg>
-        <span>Your data is protected under KDPA</span>
+
+
+      <!-- Section: Offline Learning & School Cache (Milestone 5) -->
+      <div class="figma-form-group" style="background: rgba(13, 58, 38, 0.04); border: 1px solid var(--glass-border); border-radius: 14px; padding: 14px; margin-top: 14px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+          <label style="margin: 0; font-size: 13px; font-weight: 700; color: #0D3A26;">
+            📶 Zero-Data Offline School Mode
+          </label>
+          <span class="offline-dial-indicator offline-status-pill online">🟢 Online (Auto-Synced)</span>
+        </div>
+        <p style="font-size: 12px; color: #64748B; margin: 0 0 10px 0; line-height: 1.45;">
+          Download curriculum roadmaps and revision past papers to this device so you can learn without an internet connection in remote areas.
+        </p>
+        <button type="button" id="btnPrecacheBundle" class="btn-figma-secondary" style="width: 100%; height: 38px; font-size: 12.5px; border-radius: 10px; margin: 0;" onclick="ElinguOffline.precacheFullBundle()">
+          <span>📥 Precache Offline Bundle (Zero-Data Ready)</span>
+        </button>
       </div>
 
       <button type="button" class="btn-figma-primary" onclick="finishCustomization()">
@@ -5807,7 +7348,7 @@
 
       <div class="pricing-header-center">
         <div class="auth-modal-logo">
-          <img src="/elingu-avatar.png" alt="Elingu Logo" />
+          <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Logo" />
         </div>
         <h2 class="pricing-title">Elingu CBE Learning Tiers</h2>
         <p class="pricing-subtitle">Explore what each learning pathway offers to help you think independently and master your CBE subjects.</p>
@@ -6035,6 +7576,27 @@
   </div>
 
   <script>
+    // Attach the learner's session token to every same-origin /api/ request so the server can verify who is asking.
+    // (The server now requires a token on student routes; knowing a student ID alone is no longer enough.)
+    (function installStudentAuthFetch() {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        try {
+          const url = typeof input === 'string' ? input : (input && input.url) || '';
+          if (url.charAt(0) === '/' && url.indexOf('/api/') === 0) {
+            const token = sessionStorage.getItem('elingu_student_token');
+            if (token) {
+              init = init || {};
+              const headers = new Headers(init.headers || (typeof input !== 'string' && input.headers) || {});
+              if (!headers.has('Authorization')) headers.set('Authorization', 'Bearer ' + token);
+              init.headers = headers;
+            }
+          }
+        } catch (e) { /* never block a request because of the auth helper */ }
+        return nativeFetch(input, init);
+      };
+    })();
+
     const log = document.getElementById('log');
     const form = document.getElementById('form');
     const input = document.getElementById('input');
@@ -7756,13 +9318,13 @@
           const div = document.createElement('div');
           div.className = 'quest-item active teacher-mission-item';
           div.style.cssText = 'cursor: pointer; border-color: rgba(220, 38, 38, 0.3); background: rgba(254, 242, 242, 0.85);';
-          div.title = `Click to start: ${m.title}`;
+          div.title = 'Click to start: ' + String(m.title || '');
           div.onclick = () => startMissionMiniChat(m);
 
           div.innerHTML = `
             <span class="quest-status" style="background: rgba(220, 38, 38, 0.15); color: #DC2626;">🎯</span>
             <div style="flex: 1; min-width: 0;">
-              <div style="font-weight: 700; font-size: 12.5px; color: #991B1B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.title}</div>
+              <div style="font-weight: 700; font-size: 12.5px; color: #991B1B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(m.title)}</div>
               <div style="font-size: 11px; color: #7F1D1D;">${m.teacherName || 'Mwalimu'} • ${m.items?.length || 0} Qs</div>
             </div>
             <span style="font-size: 10.5px; font-weight: 700; color: #DC2626; background: rgba(220, 38, 38, 0.12); padding: 3px 7px; border-radius: 6px;">Start ▶</span>
@@ -7938,7 +9500,6 @@
       closeQuestModal();
       triggerAchievementNotification({
         title: `${questTitle}! ⚔️`,
-        points: 15,
         message: 'Challenge commenced — earn full mastery!'
       });
       selectSuggestion(prompt);
@@ -7983,7 +9544,6 @@
       closeQuestModal();
       triggerAchievementNotification({
         title: 'New Quest Launched! ⚡',
-        points: 10,
         message: `Exploring ${chosenTopic} in ${meta.short}`
       });
 
@@ -8880,9 +10440,16 @@
       if (subject === 'Kiswahili') return { key: 'kiswahili', icon: '🗣️', label: 'Kiswahili', header: 'Elingu Kiswahili', short: 'Kiswahili' };
       if (subject === 'Physics') return { key: 'physics', icon: '⚛️', label: 'Physics', header: 'Elingu Physics', short: 'Physics' };
       if (subject === 'Chemistry') return { key: 'chemistry', icon: '🧪', label: 'Chemistry', header: 'Elingu Chemistry', short: 'Chemistry' };
-      if (subject === 'Biology') return { key: 'biology', icon: '🧬', label: 'Biology', header: 'Elingu Biology', short: 'Biology' };
-      if (subject === 'Computer Studies' || subject === 'Computer Science')
-        return { key: 'computer', icon: '💻', label: 'Computer Studies', header: 'Elingu Computer Studies', short: 'Computer Studies' };
+      if (subject === 'Computer Studies' || subject === 'Computer Science') {
+        const isCompSci = isBritish || subject === 'Computer Science';
+        return {
+          key: 'computer',
+          icon: '💻',
+          label: isCompSci ? 'Computer Science' : 'Computer Studies',
+          header: isCompSci ? 'Elingu Computer Science' : 'Elingu Computer Studies',
+          short: isCompSci ? 'Computer Science' : 'Computer Studies'
+        };
+      }
       if (subject === 'History and Citizenship' || subject === 'History')
         return { key: 'history', icon: '📜', label: 'History & Citizenship', header: 'Elingu History', short: 'History' };
       if (subject === 'Geography')
@@ -9408,6 +10975,1205 @@
     }
 
     // ============================================================
+    // 5-PILLAR APP ARCHITECTURE & NAVIGATION CONTROLLER (MILESTONE 1)
+    // ============================================================
+    window.currentMainTab = 'brain-deck';
+    window.currentBrainMode = 'learn'; // 'learn' | 'revision'
+
+    function switchMainTab(tabName) {
+      // Friendly aliases used by the phone dock: Learn and Practice are the two halves of the Brain Deck.
+      if (tabName === 'learn' || tabName === 'practice') {
+        switchMainTab('brain-deck');
+        setBrainMode(tabName === 'practice' ? 'revision' : 'learn');
+        document.querySelectorAll('.dock-tab').forEach(t => t.classList.remove('active'));
+        const dockEl = document.getElementById(tabName === 'practice' ? 'dock-practice' : 'dock-brain-deck');
+        if (dockEl) dockEl.classList.add('active');
+        return;
+      }
+      window.currentMainTab = tabName;
+
+      // Update sidebar main tabs
+      document.querySelectorAll('.main-nav-tab').forEach(t => t.classList.remove('active'));
+      const activeTabEl = document.getElementById(`tab-${tabName}`);
+      if (activeTabEl) activeTabEl.classList.add('active');
+
+      // Update mobile bottom dock
+      document.querySelectorAll('.dock-tab').forEach(t => t.classList.remove('active'));
+      const activeDockEl = document.getElementById(`dock-${tabName}`);
+      if (activeDockEl) activeDockEl.classList.add('active');
+
+      // Close mobile sidebar if open
+      if (window.innerWidth <= 900) {
+        const sidebar = document.querySelector('.sidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (sidebar && sidebar.classList.contains('open')) {
+          sidebar.classList.remove('open');
+          if (backdrop) backdrop.classList.remove('active');
+          const chevron = document.getElementById('menuToggleChevron');
+          if (chevron) chevron.style.transform = 'rotate(0deg)';
+        }
+      }
+
+      // Route to view
+      if (tabName === 'brain-deck') {
+        renderStudyDeck();
+      } else if (tabName === 'expeditions') {
+        renderExpeditionsView();
+      } else if (tabName === 'safe-box') {
+        renderSafeBoxView();
+      } else if (tabName === 'missions') {
+        renderMissionsFullView();
+      } else if (tabName === 'me') {
+        renderMeView();
+      } else if (tabName === 'explore') {
+        renderExploreView();
+      } else if (tabName === 'saved-spaces') {
+        if (typeof renderSavedSpacesView === 'function') renderSavedSpacesView();
+      } else if (tabName === 'custom-spot') {
+        openStudentModal();
+      }
+    }
+
+    function setViewHeader(title, subtitle) {
+      const headerTitle = document.querySelector('header h1');
+      if (headerTitle) headerTitle.textContent = title;
+      const headerSubtitle = document.getElementById('headerSubtitle') || document.querySelector('header .header-subtitle');
+      if (headerSubtitle) headerSubtitle.textContent = subtitle;
+    }
+
+    function renderMeView() {
+      history = [];
+      log.innerHTML = '';
+      const inputArea = document.querySelector('.input-area');
+      if (inputArea) inputArea.style.display = 'none';
+      const mount = document.createElement('div');
+      log.appendChild(mount);
+      setViewHeader('My Progress ⭐', 'XP, goals, badges and your class league');
+      if (window.ElinguPlay) ElinguPlay.renderMe(mount);
+    }
+
+    function renderExploreView() {
+      history = [];
+      log.innerHTML = '';
+      const inputArea = document.querySelector('.input-area');
+      if (inputArea) inputArea.style.display = 'none';
+      const view = document.createElement('div');
+      view.className = 'play-wrap';
+      view.innerHTML = `
+        <div class="play-card"><h3>🧭 Expeditions</h3><p class="play-mute">Journeys beyond the textbook: coding and money smarts.</p>
+          <button type="button" class="play-btn" onclick="switchMainTab('expeditions')">Open Expeditions</button></div>
+        <div class="play-card"><h3>🛡️ Safe Box</h3><p class="play-mute">Feeling stressed, bullied or unsafe? Find calm tools and who to call.</p>
+          <button type="button" class="play-btn" onclick="switchMainTab('safe-box')">Open Safe Box</button></div>`;
+      log.appendChild(view);
+      setViewHeader('Explore 🧭', 'Expeditions and Safe Box');
+    }
+
+    function setBrainMode(mode) {
+      window.currentBrainMode = mode;
+      const btnLearn = document.getElementById('btnModeLearn');
+      const btnRev = document.getElementById('btnModeRevision');
+      const learnCont = document.getElementById('brainDeckLearnContent');
+      const revCont = document.getElementById('brainDeckRevisionContent');
+
+      if (btnLearn && btnRev) {
+        if (mode === 'learn') {
+          btnLearn.classList.add('active');
+          btnRev.classList.remove('active');
+          if (learnCont) learnCont.style.display = 'block';
+          if (revCont) revCont.style.display = 'none';
+        } else {
+          btnRev.classList.add('active');
+          btnLearn.classList.remove('active');
+          if (learnCont) learnCont.style.display = 'none';
+          if (revCont) {
+            revCont.style.display = 'block';
+            const mount = document.getElementById('revisionStudioMount');
+            if (mount && (!mount.children || mount.children.length === 0)) {
+              const s = activeStudent || {};
+              const isBri = isBritishStudent(s);
+              const curr = isBri ? 'BRITISH' : 'CBC';
+              const gr = s.grade || s.yearGroup || (isBri ? 10 : 8);
+              loadRevisionStudio(curr, gr, 'Mathematics');
+            }
+          }
+        }
+      }
+    }
+
+    function renderExpeditionsView() {
+      history = [];
+      log.innerHTML = '';
+      const inputArea = document.querySelector('.input-area');
+      if (inputArea) inputArea.style.display = 'none';
+
+      const expDiv = document.createElement('div');
+      expDiv.className = 'expeditions-view';
+      expDiv.innerHTML = `
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div style="font-size: 40px; margin-bottom: 6px;">🧭</div>
+          <h2 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 6px 0;">Expeditions Studio</h2>
+          <p style="font-size: 14px; color: var(--text-secondary); max-width: 520px; margin: 0 auto; line-height: 1.5;">
+            Journeys beyond the textbook. Real-world coding, chess strategy, and money smarts designed for agile minds.
+          </p>
+        </div>
+
+        <div class="expeditions-grid">
+          <!-- Track 1: Coding -->
+          <div class="expedition-card">
+            <div style="font-size: 32px;">💻</div>
+            <div style="font-weight: 700; font-size: 17px; color: var(--text-primary);">Python & Web Coding</div>
+            <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+              Build algorithmic thinking, solve logic puzzles, and learn real programming step-by-step.
+            </div>
+            <div style="margin-top: auto; padding-top: 12px;">
+              <button type="button" class="btn-figma-primary" style="padding: 10px 14px; font-size: 12.5px; border-radius: 12px; margin: 0;" onclick="startExpeditionTrack('coding')">
+                <span>Start Coding Lab 🚀</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Track 2: Chess -->
+          <div class="expedition-card">
+            <div style="font-size: 32px;">♟️</div>
+            <div style="font-weight: 700; font-size: 17px; color: var(--text-primary);">Chess Academy</div>
+            <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+              Tactical vision, opening theory, endgame calculations, and first-principles decision making.
+            </div>
+            <div style="margin-top: auto; padding-top: 12px;">
+              <button type="button" class="btn-figma-primary" style="padding: 10px 14px; font-size: 12.5px; border-radius: 12px; margin: 0;" onclick="startExpeditionTrack('chess')">
+                <span>Coming soon</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Track 3: Financial Literacy -->
+          <div class="expedition-card">
+            <div style="font-size: 32px;">💰</div>
+            <div style="font-weight: 700; font-size: 17px; color: var(--text-primary);">Money Smarts</div>
+            <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+              Budgeting, mobile money, enterprise, compound growth, and smart financial decision making.
+            </div>
+            <div style="margin-top: auto; padding-top: 12px;">
+              <button type="button" class="btn-figma-primary" style="padding: 10px 14px; font-size: 12.5px; border-radius: 12px; margin: 0;" onclick="startExpeditionTrack('finance')">
+                <span>Open Money Studio 🌿</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      log.appendChild(expDiv);
+
+      const headerTitle = document.querySelector('header h1');
+      if (headerTitle) headerTitle.textContent = 'Expeditions 🧭';
+      const headerSubtitle = document.getElementById('headerSubtitle') || document.querySelector('header .header-subtitle');
+      if (headerSubtitle) headerSubtitle.textContent = 'Real-World Skills & Adventures';
+    }
+
+    function startExpeditionTrack(track) {
+      if (track === 'coding') {
+        setSubject('Computer Studies');
+      } else if (track === 'finance') {
+        setSubject('Business Studies');
+      } else {
+        showAchievementToast('♟️ Chess Academy is coming soon', 'We are building real puzzles. Try Coding or Money Smarts for now!');
+      }
+    }
+
+    function renderSafeBoxView() {
+      history = [];
+      log.innerHTML = '';
+      const inputArea = document.querySelector('.input-area');
+      if (inputArea) inputArea.style.display = 'none';
+
+      const safeDiv = document.createElement('div');
+      safeDiv.className = 'safe-box-view';
+      safeDiv.innerHTML = `
+        <div class="safe-box-hero">
+          <div style="font-size: 40px; margin-bottom: 6px;">🛡️</div>
+          <h2 style="font-size: 23px; font-weight: 700; color: #1E3A8A; margin: 0 0 6px 0;">Safe Box Sanctuary</h2>
+          <p style="font-size: 13.5px; color: #3B82F6; max-width: 520px; margin: 0 auto; line-height: 1.5;">
+            Your confidential space for emotional wellbeing, calm reflection, and safety. You are never alone.
+          </p>
+          <div style="margin-top: 14px;">
+            <a href="tel:116" class="childline-pill" onclick="confirmChildlineCall(event)">
+              <span style="font-size: 18px;">📞</span>
+              <span>Childline Kenya 116 (Free 24/7 Helpline)</span>
+            </a>
+          </div>
+          <div style="font-size: 11px; color: #64748B; margin-top: 8px;">
+            Calling or texting 116 is free. Our <a href="/privacy" target="_blank" rel="noopener">privacy notice</a> explains how safety messages are handled.
+          </div>
+        </div>
+
+        <div style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 18px; padding: 22px; margin-bottom: 18px; text-align: center;">
+          <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 4px 0; color: var(--text-primary);">4-7-8 Breathing Pacer 🌿</h3>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin: 0 0 16px 0;">Breathe in for 4 seconds, hold for 7, and exhale gently for 8.</p>
+          <div class="breath-box">
+            <span style="font-size: 26px;">🌬️</span>
+            <span style="font-size: 13px; margin-top: 4px;">Breathe</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;">
+          <div style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 16px; padding: 16px;">
+            <div style="font-size: 24px; margin-bottom: 6px;" aria-hidden="true">💬</div>
+            <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); margin-bottom: 4px;">Need someone to talk to?</div>
+            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 10px;">Childline Kenya listens without judging, day or night. Calling or texting 116 is free.</p>
+            <a href="tel:116" class="play-btn" style="display:inline-flex;align-items:center;text-decoration:none">Call 116 (free)</a>
+          </div>
+          <div style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 16px; padding: 16px;">
+            <div style="font-size: 24px; margin-bottom: 6px;" aria-hidden="true">🤝</div>
+            <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); margin-bottom: 4px;">If someone is bullying you</div>
+            <details>
+              <summary style="cursor:pointer;font-weight:700;font-size:13px;min-height:44px;display:flex;align-items:center">See what to do</summary>
+              <ol style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; padding-left: 18px; margin: 6px 0 0;">
+                <li>It is not your fault. You do not have to put up with it.</li>
+                <li>Tell an adult you trust: a parent, teacher or relative.</li>
+                <li>Keep proof (screenshots or messages), but do not reply in anger.</li>
+                <li>Block the person and report them on the app or website.</li>
+                <li>Call or text 116 if you feel unsafe or alone.</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+      `;
+      log.appendChild(safeDiv);
+
+      const headerTitle = document.querySelector('header h1');
+      if (headerTitle) headerTitle.textContent = 'Safe Box 🛡️';
+      const headerSubtitle = document.getElementById('headerSubtitle') || document.querySelector('header .header-subtitle');
+      if (headerSubtitle) headerSubtitle.textContent = 'Wellbeing & Student Sanctuary';
+    }
+
+    function confirmChildlineCall(e) {
+      if (!confirm('Would you like to connect directly with Childline Kenya on toll-free helpline 116? This call is free, confidential, and available 24 hours a day.')) {
+        if (e) e.preventDefault();
+      }
+    }
+
+    function renderMissionsFullView() {
+      history = [];
+      log.innerHTML = '';
+      const inputArea = document.querySelector('.input-area');
+      if (inputArea) inputArea.style.display = 'none';
+
+      const missions = window.activeStudentMissions || [];
+      const misDiv = document.createElement('div');
+      misDiv.className = 'missions-full-view';
+      misDiv.innerHTML = `
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div style="font-size: 40px; margin-bottom: 6px;">🎯</div>
+          <h2 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 6px 0;">Classroom Missions & Quests</h2>
+          <p style="font-size: 14px; color: var(--text-secondary); max-width: 520px; margin: 0 auto; line-height: 1.5;">
+            Complete assignments assigned by your teacher or embark on daily curiosity quests to build your focus streak.
+          </p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          ${missions.length === 0 ? `
+            <div style="text-align: center; padding: 40px 20px; background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 18px;">
+              <div style="font-size: 32px; margin-bottom: 8px;">🌟</div>
+              <div style="font-weight: 700; font-size: 16px; color: var(--text-primary);">All Caught Up!</div>
+              <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">No pending teacher missions right now. Generate a personal quest or review past topics!</p>
+              <button type="button" class="btn-generate-quest" style="margin: 16px auto 0 auto; display: inline-flex;" onclick="openQuestModal()">
+                <span>✨</span><span>Generate Personal Quest</span>
+              </button>
+            </div>
+          ` : missions.map(m => `
+            <div style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 16px; padding: 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+              <div>
+                <div style="font-size: 11px; font-weight: 700; color: var(--brand-green); text-transform: uppercase;">${escapeHtml(m.subject || 'Mission')} • ${m.grade ? 'Grade ' + escapeHtml(m.grade) : 'Assignment'}</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-top: 2px;">${escapeHtml(m.title || 'Teacher Assignment')}</div>
+                <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">${(m.questions || []).length} Question Challenge</div>
+              </div>
+              <button type="button" class="btn-figma-primary" style="padding: 10px 16px; font-size: 13px; border-radius: 12px; margin: 0; width: auto;" onclick="startMissionFromPopover(this.dataset.id)" data-id="${escapeHtml(m.id)}">
+                <span>Start Mission →</span>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      log.appendChild(misDiv);
+
+      const headerTitle = document.querySelector('header h1');
+      if (headerTitle) headerTitle.textContent = 'Missions 🎯';
+      const headerSubtitle = document.getElementById('headerSubtitle') || document.querySelector('header .header-subtitle');
+      if (headerSubtitle) headerSubtitle.textContent = `${missions.length} Active Challenges`;
+    }
+
+    // ============================================================
+    // METRO-STYLE TOPIC ROADMAP & SPLIT STUDIO ENGINE (MILESTONE 2)
+    // ============================================================
+    let activeCurriculumMap = null;
+    let activeSubtopicInStudio = null;
+
+    async function loadTopicMetroRoadmap(curriculum, grade, subject) {
+      try {
+        const curr = curriculum || (isBritishStudent(activeStudent) ? 'BRITISH' : 'CBC');
+        const gr = grade || (activeStudent && (activeStudent.grade || activeStudent.yearGroup)) || (curr === 'BRITISH' ? 10 : 8);
+        const subj = subject || (activeStudent && activeStudent.selectedSubjects && activeStudent.selectedSubjects[0]) || 'Mathematics';
+
+        const res = await fetch(`/api/curriculum/map?curriculum=${encodeURIComponent(curr)}&grade=${encodeURIComponent(gr)}&subject=${encodeURIComponent(subj)}`);
+        const data = await res.json();
+        if (data.success && data.map) {
+          activeCurriculumMap = data.map;
+          renderMetroRoadmapDOM(data.map);
+        }
+      } catch (err) {
+        console.warn('Could not load curriculum roadmap:', err);
+      }
+    }
+
+    function renderMetroRoadmapDOM(mapData) {
+      const container = document.getElementById('metroRoadmapMount');
+      if (!container) return;
+
+      const stations = mapData.stations || [];
+      container.innerHTML = `
+        <div class="metro-roadmap-wrapper">
+          <div class="metro-roadmap-header">
+            <div>
+              <div class="metro-roadmap-title">
+                <span>🗺️</span>
+                <span>${mapData.title || (mapData.subject + ' Curriculum Map')}</span>
+              </div>
+              <p style="font-size: 13px; color: var(--text-secondary); margin: 4px 0 0 0; line-height: 1.4;">
+                Full syllabus unlocked. Explore any strand or sub-topic below to begin self-directed learning.
+              </p>
+            </div>
+            <span class="status-badge active" style="background: rgba(0, 212, 170, 0.15); color: #059669; font-weight: 700; white-space: nowrap;">
+              ${mapData.curriculum} • Level ${mapData.grade}
+            </span>
+          </div>
+
+          <div class="metro-line-track">
+            ${stations.map((st, idx) => {
+              const statusClass = (st.status === 'locked' ? 'available' : (st.status || 'available'));
+              const statusSymbol = statusClass === 'mastered' ? '✔' : (statusClass === 'active' ? '⚡' : '📍');
+              return `
+                <div class="metro-station-row" id="station-row-${st.id}">
+                  <div class="metro-station-node ${statusClass}" onclick="toggleStationSubtopics('${st.id}')" title="${st.title}">
+                    ${statusSymbol}
+                  </div>
+                  <div class="metro-station-card" onclick="toggleStationSubtopics('${st.id}')">
+                    <div class="metro-strand-tag">${st.strand || ('Strand ' + (idx + 1))}</div>
+                    <div class="metro-station-title">${st.icon || '📍'} ${st.title}</div>
+                    <div class="metro-station-summary">${st.summary || 'Click to explore sub-topics.'}</div>
+                    
+                    <div class="metro-subtopics-tray" id="tray-${st.id}" style="display: flex;">
+                      ${(st.subtopics || []).map(sub => `
+                        <div class="metro-subtopic-stop ${(window.ElinguPlay && ElinguPlay.isMastered(sub.id)) ? 'mastered completed' : (sub.status || 'available')}" data-sub="${sub.id}" onclick="event.stopPropagation(); launchSplitStudioSubtopic('${sub.id}')">
+                          <div class="metro-stop-info">
+                            <span class="metro-stop-dot"></span>
+                            <span class="metro-stop-title">${sub.title}</span>
+                          </div>
+                          <span class="metro-stop-action">Study Stop 🚀 →</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleStationSubtopics(stationId) {
+      const tray = document.getElementById(`tray-${stationId}`);
+      if (tray) {
+        const isShown = tray.style.display === 'flex';
+        tray.style.display = isShown ? 'none' : 'flex';
+      }
+    }
+
+    async function launchSplitStudioSubtopic(subtopicId) {
+      try {
+        const res = await fetch(`/api/curriculum/subtopic/${encodeURIComponent(subtopicId)}`);
+        const data = await res.json();
+        if (data.success && data.subtopic) {
+          activeSubtopicInStudio = data;
+          renderSplitStudioCockpit(data);
+        }
+      } catch (err) {
+        console.warn('Error launching subtopic studio:', err);
+      }
+    }
+
+    let currentSocraticHistory = [];
+
+    function renderSplitStudioCockpit(data) {
+      const sub = data.subtopic;
+      const primer = sub.conceptPrimer || {};
+      const station = data.station || {};
+      const map = data.gradeMap || {};
+
+      history = [];
+      currentSocraticHistory = [];
+      log.innerHTML = '';
+      const inputArea = document.querySelector('.input-area');
+      if (inputArea) inputArea.style.display = 'none';
+
+      const stepsList = primer.explanationSteps || [];
+      const hasSteps = Array.isArray(stepsList) && stepsList.length > 0;
+
+      const cockpitDiv = document.createElement('div');
+      cockpitDiv.className = 'split-studio-container';
+      cockpitDiv.innerHTML = `
+        <div class="split-studio-topbar" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button type="button" class="split-back-btn" onclick="returnToActiveMetroRoadmap()">
+              <span>←</span><span>Back to ${map.subject || currentSubject} Map</span>
+            </button>
+            <div style="font-size: 12px; font-weight: 700; color: var(--brand-green);">
+              ${map.subject || currentSubject} • ${station.title || 'Topic Station'}
+            </div>
+          </div>
+          <div class="space-action-bar">
+            <button type="button" class="space-action-btn space-save-btn" onclick="handleSaveMySpace('socratic_stop', { title: (primer.title || sub.title), subject: (map.subject || currentSubject) })" title="Save this study stop into your Brain Vault">
+              <span>💾 Save My Space 🪐</span>
+            </button>
+            <button type="button" class="space-action-btn space-new-btn" onclick="handleNewSpace('socratic_stop')" title="Clear and start a fresh inquiry">
+              <span>🚀 New Space</span>
+            </button>
+          </div>
+        </div>
+        <div id="smartSpaceReminderMount"></div>
+
+        <!-- Concept Primer Card (Deep First Principles) -->
+        <div class="concept-primer-card">
+          <div class="primer-header">
+            <span class="primer-badge">${primer.visualBadge || '💡 First Principles Discovery'}</span>
+            <span style="font-size: 11.5px; color: #64748B; font-weight: 600;">Deep Conceptual Understanding</span>
+          </div>
+          <h2 class="primer-title">${primer.title || sub.title}</h2>
+          <div class="primer-tagline" style="font-size: 14.5px; color: var(--brand-green); font-weight: 600; margin-bottom: 12px;">
+            ${primer.tagline || 'Master the intuition behind the concept.'}
+          </div>
+          <div class="primer-body" style="font-size: 14px; line-height: 1.65; color: var(--text-primary); margin-bottom: 16px;">
+            ${primer.body || 'Let us explore this fundamental concept step-by-step from first principles.'}
+          </div>
+
+          ${hasSteps ? `
+            <div style="background: rgba(0, 212, 170, 0.05); border: 1px solid rgba(0, 212, 170, 0.2); border-radius: 12px; padding: 14px 16px; margin: 16px 0;">
+              <div style="font-size: 12px; font-weight: 700; color: var(--brand-green); text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                <span>💡</span><span>Step-by-Step "How to Think About It":</span>
+              </div>
+              ${stepsList.map((step, idx) => `
+                <div style="display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; font-size: 13.5px; line-height: 1.55;">
+                  <span style="background: var(--brand-green); color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px;">${idx + 1}</span>
+                  <span style="color: var(--text-primary);">${step}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          ${primer.workedExample ? `
+            <div style="background: rgba(59, 130, 246, 0.06); border-left: 4px solid #3B82F6; border-radius: 0 12px 12px 0; padding: 14px 16px; margin: 14px 0; font-size: 13.5px; line-height: 1.6;">
+              <div style="font-weight: 700; color: #1D4ED8; margin-bottom: 6px; font-size: 12px; text-transform: uppercase;">
+                🔍 Concrete Walkthrough Example:
+              </div>
+              <div style="white-space: pre-line; color: var(--text-primary);">${primer.workedExample}</div>
+            </div>
+          ` : ''}
+          
+          ${primer.formula ? `
+            <div class="primer-formula-box">
+              <span>📐</span>
+              <span><strong>Key Principle:</strong> ${primer.formula}</span>
+            </div>
+          ` : ''}
+
+          ${primer.realWorldContext ? `
+            <div class="primer-realworld" style="margin-top: 12px;">
+              <span style="font-size: 18px; flex-shrink: 0;">🌍</span>
+              <span><strong>Real-World Application:</strong> ${primer.realWorldContext}</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Socratic Exploration Cockpit (Live AI Chat Stream) -->
+        <div class="socratic-cockpit-card">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <span style="font-size: 12px; font-weight: 700; color: var(--brand-green); text-transform: uppercase;">
+              🧭 Socratic Guided Inquiry
+            </span>
+            <span class="status-badge active" style="background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 700;">
+              Active Discovery
+            </span>
+          </div>
+
+          <div class="socratic-prompt-bubble" id="socraticPromptQuestion">
+            ${sub.socraticPrompt || 'What patterns do you notice when working with this concept?'}
+          </div>
+
+          <!-- Dynamic Socratic Dialogue Stream -->
+          <div id="socraticDialogueStream" style="margin: 14px 0; display: flex; flex-direction: column; gap: 10px;"></div>
+
+          <div class="socratic-input-row" id="socraticInputRow">
+            <input type="text" id="socraticAnswerInput" class="socratic-input" placeholder="Type your thinking or explanation..." onkeydown="if(event.key === 'Enter') submitSocraticStep('${sub.id}')" />
+            <button type="button" class="btn-figma-primary" id="btnSubmitSocratic" style="width: auto; padding: 10px 18px; margin: 0; border-radius: 12px;" onclick="submitSocraticStep('${sub.id}')">
+              <span>Reason with Elingu →</span>
+            </button>
+          </div>
+
+          <div id="socraticMasteryActions" style="margin-top: 14px; display: none;"></div>
+        </div>
+      `;
+
+      log.appendChild(cockpitDiv);
+
+      const headerTitle = document.querySelector('header h1');
+      if (headerTitle) headerTitle.textContent = sub.title;
+      const headerSubtitle = document.getElementById('headerSubtitle') || document.querySelector('header .header-subtitle');
+      if (headerSubtitle) headerSubtitle.textContent = `${station.title || 'Topic'} • Socratic Discovery`;
+    }
+
+    function returnToActiveMetroRoadmap() {
+      if (window.currentBrainMode === 'revision') {
+        renderStudyDeck();
+      } else {
+        setSubject(currentSubject || 'Mathematics', 'map');
+      }
+    }
+
+    async function submitSocraticStep(subtopicId) {
+      const inputEl = document.getElementById('socraticAnswerInput');
+      const streamEl = document.getElementById('socraticDialogueStream');
+      const submitBtn = document.getElementById('btnSubmitSocratic');
+      const masteryEl = document.getElementById('socraticMasteryActions');
+      if (!inputEl || !inputEl.value.trim()) return;
+
+      const userText = inputEl.value.trim();
+      inputEl.value = '';
+
+      // 1. Append user's reasoning to the dialogue stream
+      const userBubble = document.createElement('div');
+      userBubble.style.cssText = 'align-self: flex-end; background: var(--brand-green); color: white; padding: 10px 16px; border-radius: 14px 14px 2px 14px; max-width: 80%; font-size: 13.5px; line-height: 1.5; box-shadow: 0 2px 6px rgba(0,0,0,0.06); animation: fadeIn 0.15s ease;';
+      userBubble.textContent = userText;
+      streamEl.appendChild(userBubble);
+
+      // 2. Append thinking indicator
+      const thinkingBubble = document.createElement('div');
+      thinkingBubble.id = 'socraticThinkingIndicator';
+      thinkingBubble.style.cssText = 'align-self: flex-start; background: rgba(0, 212, 170, 0.08); border: 1.5px solid rgba(0, 212, 170, 0.25); border-radius: 14px 14px 14px 2px; padding: 10px 16px; max-width: 85%; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; animation: pulse 1s infinite;';
+      thinkingBubble.innerHTML = `<span>🌱 Elingu Socratic Guide:</span> <em>Thinking with you... ⏳</em>`;
+      streamEl.appendChild(thinkingBubble);
+
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/curriculum/socratic-reason', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subtopicId,
+            userText,
+            conversationHistory: currentSocraticHistory,
+            studentId: activeStudent ? activeStudent.id : null,
+            curriculum: isBritishStudent(activeStudent) ? 'BRITISH' : 'CBC',
+            grade: currentGrade,
+            subject: currentSubject
+          })
+        });
+
+        const data = await res.json();
+        thinkingBubble.remove();
+
+        const replyText = data.reply || "Let's explore that thought! What patterns do you notice next?";
+        currentSocraticHistory.push({ role: 'user', content: userText });
+        currentSocraticHistory.push({ role: 'assistant', content: replyText });
+
+        const replyBubble = document.createElement('div');
+        replyBubble.style.cssText = 'align-self: flex-start; background: rgba(0, 212, 170, 0.08); border: 1.5px solid rgba(0, 212, 170, 0.25); border-radius: 14px 14px 14px 2px; padding: 12px 18px; max-width: 85%; font-size: 13.5px; line-height: 1.6; color: var(--text-primary); animation: fadeIn 0.2s ease;';
+        replyBubble.innerHTML = `
+          <div style="font-size: 11.5px; font-weight: 700; color: var(--brand-green); margin-bottom: 4px;">🌱 Elingu Socratic Guide:</div>
+          <div>${escapeHtml(replyText)}</div>
+        `;
+        streamEl.appendChild(replyBubble);
+
+        if (data.celebrate && window.ElinguPlay) ElinguPlay.celebrate(data.celebrate);
+        if (data.isMastered && masteryEl) {
+          masteryEl.style.display = 'block';
+          masteryEl.innerHTML = `
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1.5px solid #10B981; border-radius: 12px; padding: 12px 16px; margin-top: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <div style="font-weight: 700; color: #059669; font-size: 13.5px;">🎉 Learning Stop Mastered!</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">You reasoned through the first principles of this concept.</div>
+              </div>
+              <button type="button" class="btn-figma-primary" style="width: auto; padding: 8px 16px; font-size: 12.5px; border-radius: 10px; margin: 0;" onclick="returnToActiveMetroRoadmap()">
+                <span>Continue on Metro Roadmap 🚇 →</span>
+              </button>
+            </div>
+          `;
+        }
+      } catch (err) {
+        thinkingBubble.remove();
+        console.warn('Error in socratic reasoning call:', err);
+        const errBubble = document.createElement('div');
+        errBubble.style.cssText = 'align-self: flex-start; background: rgba(245, 158, 11, 0.1); border: 1px solid #F59E0B; border-radius: 12px; padding: 10px 14px; font-size: 13px; color: #B45309;';
+        errBubble.textContent = "I'm reflecting on your thought. Let's take it step by step — how does your idea connect with the formula above?";
+        streamEl.appendChild(errBubble);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+        if (inputEl) inputEl.focus();
+      }
+    }
+
+    let activeRevisionPapers = [];
+    let activeRevisionPaper = null;
+    let currentRevisionQIdx = 0;
+    let currentQuestionXrayCache = {};
+    let isExaminerXrayVisible = false;
+    let revisionWorkingMode = 'notebook'; // 'notebook' or 'digital'
+
+    function setRevisionWorkingMode(mode) {
+      revisionWorkingMode = mode;
+      renderRevisionCockpitDOM();
+    }
+
+    function insertMathSymbol(sym) {
+      let target = document.getElementById('studentWorkingInput');
+      const finalInput = document.getElementById('studentFinalAnswerInput');
+      if (document.activeElement === finalInput || !target) {
+        target = finalInput;
+      }
+      if (!target) return;
+      const start = target.selectionStart ?? target.value.length;
+      const end = target.selectionEnd ?? target.value.length;
+      const val = target.value;
+      target.value = val.substring(0, start) + sym + val.substring(end);
+      target.selectionStart = target.selectionEnd = start + sym.length;
+      target.focus();
+    }
+
+    function renderRevisionPapersHubDOM() {
+      const mount = document.getElementById('revisionStudioMount');
+      if (!mount) return;
+
+      if (!activeRevisionPapers || activeRevisionPapers.length === 0) {
+        mount.innerHTML = `
+          <div style="text-align: center; padding: 40px 20px; background: var(--glass-white); border-radius: 16px; border: 1px solid var(--glass-border);">
+            <div style="font-size: 36px; margin-bottom: 10px;">🎯</div>
+            <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px 0;">No Assessment Papers Found</h3>
+            <p style="font-size: 14px; color: var(--text-secondary); max-width: 480px; margin: 0 auto;">No past assessment papers are loaded for this subject yet. Check back soon!</p>
+          </div>
+        `;
+        return;
+      }
+
+      mount.innerHTML = `
+        <div class="revision-papers-hub" style="display: flex; flex-direction: column; gap: 20px;">
+          <div class="revision-hub-header" style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 18px; padding: 22px; box-shadow: 0 4px 16px rgba(0,0,0,0.03);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #D97706; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px;">
+                  <span>🎯</span><span>Revision & Exam Preparation Hub</span>
+                </div>
+                <h2 style="font-size: 22px; font-weight: 800; color: var(--text-primary); margin: 0 0 6px 0;">
+                  Choose Your Past Assessment Paper
+                </h2>
+                <p style="font-size: 13.5px; color: var(--text-secondary); margin: 0; max-width: 620px; line-height: 1.5;">
+                  Select a past or model assessment paper to practice exam-style questions. Practice with your notebook or digital working pad, with instant Socratic guidance and Examiner X-Ray marking keys.
+                </p>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <span class="status-badge active" style="background: rgba(245, 158, 11, 0.15); color: #D97706; font-weight: 700; padding: 6px 14px; border-radius: 999px;">
+                  ${activeRevisionPapers.length} Papers Available
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="revision-papers-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+            ${activeRevisionPapers.map((paper) => {
+              const isCalc = paper.calculatorAllowed;
+              const qCount = paper.questionCount || (paper.questions && paper.questions.length) || 0;
+              return `
+                <div class="revision-paper-card" style="background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                  <div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                      <span style="font-size: 11px; font-weight: 700; color: var(--brand-green); text-transform: uppercase; letter-spacing: 0.5px;">
+                        ${paper.examBoard || paper.curriculum} • ${paper.series || 'Assessment Series'}
+                      </span>
+                      <span style="font-size: 12px; font-weight: 700; color: #D97706;">
+                        ⏱️ ${paper.durationMinutes || 120} Mins
+                      </span>
+                    </div>
+                    <h3 style="font-size: 17px; font-weight: 800; color: var(--text-primary); margin: 0 0 10px 0; line-height: 1.35;">
+                      ${paper.title || 'Revision Paper'}
+                    </h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;">
+                      <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: ${isCalc ? 'rgba(59, 130, 246, 0.12)' : 'rgba(239, 68, 68, 0.12)'}; color: ${isCalc ? '#2563EB' : '#DC2626'};">
+                        ${isCalc ? '🧮 Calculator Allowed' : '🚫 Non-Calculator'}
+                      </span>
+                      <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(0, 212, 170, 0.12); color: #059669;">
+                        📝 ${qCount} Questions
+                      </span>
+                      <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(147, 51, 234, 0.12); color: #9333EA;">
+                        🔍 Examiner X-Ray
+                      </span>
+                    </div>
+                  </div>
+                  <button type="button" class="btn-primary" onclick="selectRevisionPaper('${paper.id}')" style="width: 100%; justify-content: center; padding: 10px 16px; font-size: 13.5px; font-weight: 700; border-radius: 10px; gap: 6px; cursor: pointer;">
+                    <span>Practice Paper Questions</span>
+                    <span>→</span>
+                  </button>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Practice exams now live in public/exam.js (timed papers, results, mark scheme after submit).
+    async function loadRevisionStudio(curriculum, grade, subject) {
+      const mount = document.getElementById('revisionStudioMount');
+      if (!mount) return;
+      const s = activeStudent || {};
+      const isBri = isBritishStudent(s);
+      const curr = curriculum || (isBri ? 'BRITISH' : 'CBC');
+      const gr = grade || (s.grade || s.yearGroup) || (curr === 'BRITISH' ? 10 : 8);
+      if (window.ElinguExam) {
+        window.ElinguExam.mount(mount, { curriculum: curr, grade: gr, subject: subject });
+      } else {
+        mount.innerHTML = '<div style="padding:24px;text-align:center">Practice exams are loading. Please try again in a moment.</div>';
+      }
+    }
+
+    async function selectRevisionPaper(paperId) {
+      try {
+        const res = await fetch(`/api/revision/paper/${encodeURIComponent(paperId)}`);
+        const data = await res.json();
+        if (data.success && data.paper) {
+          activeRevisionPaper = data.paper;
+          currentRevisionQIdx = 0;
+          isExaminerXrayVisible = false;
+          renderRevisionCockpitDOM();
+        }
+      } catch (err) {
+        console.warn('Error selecting revision paper:', err);
+      }
+    }
+
+    function renderRevisionCockpitDOM() {
+      const mount = document.getElementById('revisionStudioMount');
+      if (!mount || !activeRevisionPaper) return;
+
+      const p = activeRevisionPaper;
+      const questions = p.questions || [];
+      const q = questions[currentRevisionQIdx] || questions[0];
+      if (!q) return;
+
+      const totalQ = questions.length;
+      const isCalculator = p.calculatorAllowed;
+
+      mount.innerHTML = `
+        <div class="revision-studio-wrap">
+          <div style="margin-bottom: 12px;">
+            <button type="button" class="split-back-btn" onclick="renderRevisionPapersHubDOM()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--glass-white); border: 1px solid var(--glass-border); border-radius: 10px; font-size: 12.5px; font-weight: 600; color: var(--text-primary); cursor: pointer;">
+              <span>←</span><span>Back to Papers Hub</span>
+            </button>
+          </div>
+          <!-- Paper Selector Header -->
+          <div class="revision-header-card">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <span style="font-size: 11px; font-weight: 700; color: #D97706; text-transform: uppercase; letter-spacing: 0.5px;">
+                  ${p.examBoard || p.curriculum} • ${p.series || 'Assessment Series'}
+                </span>
+                <h3 style="font-size: 18px; font-weight: 800; color: var(--text-primary); margin: 2px 0 0 0;">
+                  ${p.title || 'Revision Paper'}
+                </h3>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="status-badge active" style="background: rgba(245, 158, 11, 0.15); color: #D97706; font-weight: 700;">
+                  ⏱️ ${p.durationMinutes || 120} Mins
+                </span>
+                <span class="status-badge" style="background: ${isCalculator ? 'rgba(59, 130, 246, 0.12)' : 'rgba(239, 68, 68, 0.12)'}; color: ${isCalculator ? '#2563EB' : '#DC2626'}; font-weight: 700;">
+                  ${isCalculator ? '🧮 Calculator Allowed' : '🚫 Non-Calculator'}
+                </span>
+              </div>
+            </div>
+
+            <!-- Paper Switcher Scroll -->
+            <div class="revision-papers-scroll">
+              ${activeRevisionPapers.map(item => `
+                <button type="button" class="revision-paper-pill ${item.id === p.id ? 'active' : ''}" onclick="selectRevisionPaper('${item.id}')">
+                  <span>📝</span>
+                  <span>${item.curriculum === 'CBC' ? (item.title || item.series) : (item.paperCode || item.title)}</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Question Drill Cockpit (2-Pane Desktop Desk) -->
+          <div class="revision-question-card">
+            <div class="revision-desk-layout">
+              <!-- LEFT PANE: Question Stem & Context -->
+              <div class="revision-desk-left">
+                <div class="revision-meta-bar">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="revision-q-tag">Question ${q.number || (currentRevisionQIdx + 1)} of ${totalQ}</span>
+                    <span style="font-size: 12.5px; font-weight: 600; color: var(--text-secondary);">${q.topic || 'Core Topic'}</span>
+                  </div>
+                  <span class="revision-marks-badge">[ ${q.marks || 4} Marks ]</span>
+                </div>
+
+                <!-- Problem Stem -->
+                <div class="revision-stem-box" id="revQuestionStem">${q.stem}</div>
+
+                <!-- Socratic Hint Accordion -->
+                ${q.formulaHint ? `
+                  <div class="revision-hint-card">
+                    <span style="font-size: 16px; flex-shrink: 0;">💡</span>
+                    <div>
+                      <strong>Socratic Entry Strategy:</strong> ${q.formulaHint}
+                    </div>
+                  </div>
+                ` : ''}
+
+                <!-- Question Navigation Bar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 14px;">
+                  <button type="button" class="btn-figma-secondary" style="width: auto; padding: 8px 14px; margin: 0; font-size: 12px; border-radius: 10px;" ${currentRevisionQIdx === 0 ? 'disabled style="opacity:0.5;"' : ''} onclick="navRevisionQuestion(-1)">
+                    ← Prev
+                  </button>
+                  <span style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">
+                    ${currentRevisionQIdx + 1} of ${totalQ}
+                  </span>
+                  <button type="button" class="btn-figma-secondary" style="width: auto; padding: 8px 14px; margin: 0; font-size: 12px; border-radius: 10px;" ${currentRevisionQIdx === totalQ - 1 ? 'disabled style="opacity:0.5;"' : ''} onclick="navRevisionQuestion(1)">
+                    Next →
+                  </button>
+                </div>
+              </div>
+
+              <!-- RIGHT PANE: Working Desk & Examiner Mark Scheme -->
+              <div class="revision-desk-right">
+                <!-- Working Mode Switcher -->
+                <div class="working-mode-toggle">
+                  <button type="button" class="working-mode-btn ${revisionWorkingMode === 'notebook' ? 'active' : ''}" onclick="setRevisionWorkingMode('notebook')">
+                    <span>📓 Exercise Book</span>
+                  </button>
+                  <button type="button" class="working-mode-btn ${revisionWorkingMode === 'digital' ? 'active' : ''}" onclick="setRevisionWorkingMode('digital')">
+                    <span>💻 Type Steps</span>
+                  </button>
+                </div>
+
+                <!-- Quick Math Ribbon -->
+                <div class="quick-math-ribbon">
+                  <span style="font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-right: 4px;">Symbols:</span>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('²')">x²</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('³')">x³</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('√')">√</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('≤')">≤</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('≥')">≥</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('π')">π</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('÷')">÷</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('×')">×</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('±')">±</button>
+                  <button type="button" class="quick-math-sym-btn" onclick="insertMathSymbol('°')">°</button>
+                </div>
+
+                ${revisionWorkingMode === 'notebook' ? `
+                  <div class="notebook-mode-banner">
+                    <span style="font-size: 20px;">📓</span>
+                    <div>
+                      <strong style="color: #92400E; font-size: 13px;">Physical Exercise Book Mode:</strong>
+                      <p style="margin: 3px 0 0 0; font-size: 12px; color: #78350F; line-height: 1.45;">
+                        Solve in your exercise book with your pen. When ready, enter your final answer below to reveal the official mark scheme and self-check your step marks <strong>[M1, A1, B1]</strong>.
+                      </p>
+                    </div>
+                  </div>
+                ` : `
+                  <div class="revision-working-label">
+                    <span>✍️ Student Working Pad (Show every step for method marks [M1]):</span>
+                    <span style="font-size: 11px; color: #64748B;">Examiners award marks for each step</span>
+                  </div>
+                  <textarea id="studentWorkingInput" class="revision-working-textarea" placeholder="Step 1: Expand brackets or identify formula...&#10;Step 2: Group like terms...&#10;Step 3: Solve for variable..."></textarea>
+                `}
+
+                <div class="revision-answer-row">
+                  <label for="studentFinalAnswerInput" style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin: 0;">
+                    Final Answer:
+                  </label>
+                  <input type="text" id="studentFinalAnswerInput" class="revision-answer-input" placeholder="e.g. x < 11 or 17 m or 8400" onkeydown="if(event.key==='Enter') evaluateActiveWorking('${q.id}')" />
+                </div>
+
+                <!-- Actions Bar -->
+                <div class="revision-actions-bar">
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn-figma-primary" style="width: auto; padding: 10px 18px; margin: 0; border-radius: 12px;" onclick="evaluateActiveWorking('${q.id}')">
+                      <span>🧪 ${revisionWorkingMode === 'notebook' ? 'Check Answer & Inspect Steps (X-Ray) →' : 'Evaluate My Working →'}</span>
+                    </button>
+                    <button type="button" class="btn-xray-toggle" onclick="toggleExaminerXray('${q.id}')">
+                      <span>🔬 Examiner X-Ray</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Evaluation Feedback Mount -->
+                <div id="evalResultMount" style="display: none;"></div>
+
+                <!-- Examiner X-Ray Scheme Mount -->
+                <div id="xraySchemeMount" style="display: ${isExaminerXrayVisible ? 'block' : 'none'};"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function navRevisionQuestion(dir) {
+      if (!activeRevisionPaper || !activeRevisionPaper.questions) return;
+      const total = activeRevisionPaper.questions.length;
+      const nextIdx = currentRevisionQIdx + dir;
+      if (nextIdx >= 0 && nextIdx < total) {
+        currentRevisionQIdx = nextIdx;
+        isExaminerXrayVisible = false;
+        renderRevisionCockpitDOM();
+      }
+    }
+
+    async function toggleExaminerXray(questionId) {
+      isExaminerXrayVisible = !isExaminerXrayVisible;
+      const mount = document.getElementById('xraySchemeMount');
+      if (!mount) return;
+
+      if (!isExaminerXrayVisible) {
+        mount.style.display = 'none';
+        return;
+      }
+
+      mount.style.display = 'block';
+      if (currentQuestionXrayCache[questionId]) {
+        renderXrayContent(mount, currentQuestionXrayCache[questionId]);
+        return;
+      }
+
+      mount.innerHTML = '<div style="padding: 16px; text-align: center; color: #6D28D9;">Loading Official Examiner X-Ray... ⏳</div>';
+      try {
+        const res = await fetch(`/api/revision/xray/${encodeURIComponent(questionId)}`);
+        const data = await res.json();
+        if (data.success && data.xray) {
+          currentQuestionXrayCache[questionId] = data.xray;
+          renderXrayContent(mount, data.xray);
+        }
+      } catch (err) {
+        mount.innerHTML = '<div style="padding: 12px; color: #DC2626;">Failed to load Examiner X-Ray.</div>';
+      }
+    }
+
+    function renderXrayContent(mount, xray) {
+      const rubrics = xray.markBreakdown || [];
+      const keywords = xray.keywords || [];
+
+      mount.innerHTML = `
+        <div class="examiner-xray-card">
+          <div class="xray-header">
+            <span class="xray-tag">
+              <span>🔬 Official Examiner X-Ray</span>
+              <span>• Total: ${xray.marks} Marks</span>
+            </span>
+            <span style="font-size: 11px; font-weight: 700; color: #6D28D9;">
+              ${xray.paperCode || ''}
+            </span>
+          </div>
+
+          <table class="xray-rubric-table">
+            <thead>
+              <tr style="font-size: 11.5px; font-weight: 700; color: #6D28D9; text-align: left;">
+                <th style="padding: 6px 10px; width: 80px;">Mark</th>
+                <th style="padding: 6px 10px;">Requirement & Working Criteria</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rubrics.map(r => {
+                const codeLetter = (r.code || 'M').charAt(0).toLowerCase();
+                return `
+                  <tr class="xray-rubric-row">
+                    <td style="padding: 10px;">
+                      <span class="xray-code-badge ${codeLetter}">[ ${r.code} ]</span>
+                    </td>
+                    <td style="padding: 10px; font-size: 13px; color: var(--text-primary); line-height: 1.45;">
+                      <strong>${r.type} Mark:</strong> ${r.description}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <!-- Mandatory Keywords -->
+          ${keywords.length > 0 ? `
+            <div style="margin-top: 10px; margin-bottom: 10px;">
+              <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6D28D9; display: block; margin-bottom: 4px;">
+                Mandatory Examiner Keywords:
+              </span>
+              <div>
+                ${keywords.map(kw => `<span class="xray-keyword-pill"><u>${kw}</u></span>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Pitfall Notes -->
+          ${xray.examinerNotes ? `
+            <div class="xray-pitfall-alert">
+              <strong>⚠️ Examiner Report Warning:</strong> ${xray.examinerNotes}
+            </div>
+          ` : ''}
+
+          <!-- Model Answer -->
+          ${xray.modelAnswer ? `
+            <div style="margin-top: 12px; background: rgba(255, 255, 255, 0.7); border: 1px solid rgba(196, 181, 253, 0.5); border-radius: 12px; padding: 12px 14px;">
+              <span style="font-size: 11px; font-weight: 700; color: #4338CA; text-transform: uppercase;">
+                Official Model Answer with Inline Mark Allocation:
+              </span>
+              <pre style="margin: 6px 0 0 0; font-family: monospace; font-size: 12.5px; color: #1E1B4B; white-space: pre-wrap; line-height: 1.5;">${xray.modelAnswer}</pre>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    async function evaluateActiveWorking(questionId) {
+      const workingInput = document.getElementById('studentWorkingInput');
+      const finalInput = document.getElementById('studentFinalAnswerInput');
+      const evalMount = document.getElementById('evalResultMount');
+      if (!evalMount) return;
+
+      const workingText = workingInput ? workingInput.value.trim() : '';
+      const finalAnswer = finalInput ? finalInput.value.trim() : '';
+
+      if (!workingText && !finalAnswer) {
+        alert(revisionWorkingMode === 'notebook' 
+          ? 'Please enter your final answer to verify and inspect the Examiner Mark Scheme.' 
+          : 'Please write your step-by-step working or final answer before evaluating.');
+        if (finalInput) finalInput.focus();
+        else if (workingInput) workingInput.focus();
+        return;
+      }
+
+      evalMount.style.display = 'block';
+      evalMount.innerHTML = '<div style="padding: 14px; text-align: center; color: var(--brand-green);">Evaluating working against Examiner X-Ray mark scheme... 🔍</div>';
+
+      try {
+        const res = await fetch('/api/revision/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId, workingText, finalAnswer })
+        });
+        const data = await res.json();
+        if (data.success) {
+          evalMount.innerHTML = `
+            <div class="eval-result-card">
+              ${revisionWorkingMode === 'notebook' ? `
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px dashed #F59E0B; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 12.5px; color: #92400E; line-height: 1.45;">
+                  📓 <strong>Exercise Book Cross-Check:</strong> Look at each line in your physical notebook and verify you wrote the required intermediate steps for each <strong>[M1]</strong> method mark below!
+                </div>
+              ` : ''}
+              <div class="eval-score-row">
+                <div>
+                  <span style="font-size: 11px; font-weight: 700; color: var(--brand-green); text-transform: uppercase;">
+                    Examiner Assessment
+                  </span>
+                  <div class="eval-score-num">${data.awardedMarks} / ${data.totalMarks} Marks (${data.percentage}%)</div>
+                </div>
+                <div style="font-size: 26px;">${data.percentage >= 75 ? '🌟' : (data.percentage >= 50 ? '👍' : '💡')}</div>
+              </div>
+
+              <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5; margin-bottom: 12px;">
+                ${data.qualitativeFeedback}
+              </div>
+
+              <!-- Marks list -->
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;">
+                ${(data.markResults || []).map(r => `
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: ${r.awarded ? '#047857' : '#B91C1C'}; background: ${r.awarded ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)'}; padding: 6px 10px; border-radius: 8px;">
+                    <span>${r.awarded ? '✔' : '✗'}</span>
+                    <span><strong>[${r.code}]:</strong> ${r.feedback}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+
+          // Auto-reveal Examiner X-Ray so student studies the rubric
+          isExaminerXrayVisible = true;
+          const xrayMount = document.getElementById('xraySchemeMount');
+          if (xrayMount) {
+            xrayMount.style.display = 'block';
+            toggleExaminerXray(questionId);
+          }
+        }
+      } catch (err) {
+        evalMount.innerHTML = '<div style="padding: 10px; color: #DC2626;">Evaluation failed. Please try again.</div>';
+      }
+    }
+
+    // ============================================================
+    // KDPA 2019 SECTION 33 STRICT ONBOARDING GOVERNANCE
+    // Direct exploration without consent is blocked. Every learner
+    // must be registered under verified parent consent or logged in.
+    // ============================================================
+
+    // ============================================================
+    // DUAL-TIER ZERO-DATA OFFLINE ENGINE (MILESTONE 5)
+    // ============================================================
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then((reg) => {
+          console.log('[Elingu PWA] Service Worker registered with scope:', reg.scope);
+        }).catch((err) => {
+          console.warn('[Elingu PWA] Service Worker registration failed:', err);
+        });
+      });
+    }
+
+    const ElinguOffline = {
+      isOnline: navigator.onLine,
+      init() {
+        window.addEventListener('online', () => this.handleStatusChange(true));
+        window.addEventListener('offline', () => this.handleStatusChange(false));
+        this.updateOfflineDial();
+      },
+      handleStatusChange(isOnline) {
+        this.isOnline = isOnline;
+        this.updateOfflineDial();
+      },
+      updateOfflineDial() {
+        const dials = document.querySelectorAll('.offline-dial-indicator');
+        dials.forEach(el => {
+          if (this.isOnline) {
+            el.innerHTML = '🟢 Online (Auto-Synced)';
+            el.className = 'offline-status-pill online';
+          } else {
+            el.innerHTML = '📶 Offline: only lessons you opened before are available';
+            el.className = 'offline-status-pill offline';
+          }
+        });
+      },
+      async precacheFullBundle() {
+        const btn = document.getElementById('btnPrecacheBundle');
+        if (btn) btn.textContent = 'Precaching offline bundle... ⏳';
+        try {
+          await Promise.all([
+            fetch('/api/curriculum/map?curriculum=CBC&grade=8&subject=Mathematics'),
+            fetch('/api/curriculum/map?curriculum=BRITISH&grade=10&subject=Mathematics'),
+            fetch('/api/revision/papers?curriculum=CBC&grade=8&subject=Mathematics'),
+            fetch('/api/revision/papers?curriculum=BRITISH&grade=10&subject=Mathematics')
+          ]);
+          if (btn) btn.textContent = '✔ Offline Bundle Cached (Ready for Remote Study)';
+          alert('Full curriculum roadmap and revision past papers cached for zero-data study in remote schools!');
+        } catch (e) {
+          if (btn) btn.textContent = 'Cache complete via PWA Service Worker';
+        }
+      }
+    };
+    ElinguOffline.init();
+
+    // ============================================================
     // THE ELINGU STUDY DECK (HOME / STUDY SANCTUARY)
     // ============================================================
     let currentSparkData = null;
@@ -9461,50 +12227,62 @@
           <div class="deck-avatar">${avatar}</div>
         </div>
         <h2 class="deck-greeting-title">${timeGreeting}, ${handle}! ☀️</h2>
-        <div class="deck-badges-row">
-          <span class="deck-badge streak">🔥 3-Day Focus Streak</span>
-          <span class="deck-badge scholar">Level 8 Socratic Scholar 🛡️</span>
-          <span class="deck-badge">${levelLabel}</span>
+        <div class="deck-subtitle-row" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 18px;">
+          ${levelLabel} • Self-Directed Learning Space
         </div>
 
-        <div class="deck-spark-card" id="deckSparkCard">
-          <div class="deck-spark-header">
-            <span class="deck-spark-tag" id="deckSparkTag">💡 Today's Spark</span>
-            <span class="deck-spark-topic" id="deckSparkTopic">Contextual Discovery</span>
-          </div>
-          <div class="deck-spark-text" id="deckSparkText">Loading today's contextual wonder... ⏳</div>
-          <a href="#" class="deck-spark-action" id="deckSparkAction" style="display: none;" onclick="event.preventDefault(); investigateSpark();">
-            Investigate with Elingu ⚡ →
-          </a>
+        <!-- Brain Deck Dual-Mode Switcher: Learn vs. Revision -->
+        <div class="brain-deck-mode-bar" id="brainDeckModeBar">
+          <button type="button" class="brain-mode-pill ${window.currentBrainMode !== 'revision' ? 'active' : ''}" id="btnModeLearn" onclick="setBrainMode('learn')">
+            <span class="mode-icon">📖</span>
+            <span class="mode-title">Learn</span>
+            <span class="mode-sub">• Concepts & Learn Map</span>
+          </button>
+          <button type="button" class="brain-mode-pill ${window.currentBrainMode === 'revision' ? 'active' : ''}" id="btnModeRevision" onclick="setBrainMode('revision')">
+            <span class="mode-icon">🎯</span>
+            <span class="mode-title">Revision</span>
+            <span class="mode-sub">• Exam Mastery & Past Papers</span>
+          </button>
         </div>
 
-        <div class="deck-section-label">How are we learning today?</div>
-        <div class="deck-mood-row">
-          <div class="deck-mood-btn" onclick="startMoodSession('warmup')">
-            <span class="mood-icon">⚡</span>
-            <span class="mood-title">10-Min Brain Spark</span>
-            <span class="mood-desc">A quick thinking workout to sharpen your focus</span>
+        <div id="brainDeckLearnContent" style="display: ${window.currentBrainMode !== 'revision' ? 'block' : 'none'};">
+          <!-- Metro-Style Learning Roadmap Mount (Prominent Learn Map) -->
+          <div id="metroRoadmapMount" style="margin-top: 8px; margin-bottom: 24px;"></div>
+
+          <div id="playSparkMount"></div>
+
+          <div class="deck-section-label">How are we learning today?</div>
+          <div class="deck-mood-row">
+            <div class="deck-mood-btn" onclick="startMoodSession('warmup')">
+              <span class="mood-icon">⚡</span>
+              <span class="mood-title">10-Min Warm-up</span>
+              <span class="mood-desc">A quick thinking workout to sharpen your focus</span>
+            </div>
+            <div class="deck-mood-btn" onclick="startMoodSession('homework')">
+              <span class="mood-icon">🎯</span>
+              <span class="mood-title">Unpack Homework</span>
+              <span class="mood-desc">Break down a tricky question step-by-step</span>
+            </div>
+            <div class="deck-mood-btn" onclick="setSubject('Virtual Lab')">
+              <span class="mood-icon">🧪</span>
+              <span class="mood-title">Virtual Lab</span>
+              <span class="mood-desc">Explore interactive calibrated apparatus & experiments</span>
+            </div>
           </div>
-          <div class="deck-mood-btn" onclick="startMoodSession('homework')">
-            <span class="mood-icon">🎯</span>
-            <span class="mood-title">Unpack Homework</span>
-            <span class="mood-desc">Break down a tricky question step-by-step</span>
-          </div>
-          <div class="deck-mood-btn" onclick="setSubject('Virtual Lab')">
-            <span class="mood-icon">🧪</span>
-            <span class="mood-title">Virtual Lab</span>
-            <span class="mood-desc">Explore interactive calibrated apparatus & experiments</span>
+
+          <div class="deck-divider"></div>
+          <div class="deck-section-label">Jump into a subject</div>
+          <div class="deck-subjects-row" id="deckSubjectsRow">
+            ${enrolledSubjects.map(subj => {
+              const meta = getSubjectMeta(subj, grade);
+              const icon = meta.key === 'virtual_lab' ? '🧪' : (meta.icon || '📚');
+              return `<button type="button" class="deck-subject-pill" onclick="setSubject('${subj}')"><span>${icon}</span><span>${subj}</span></button>`;
+            }).join('')}
           </div>
         </div>
 
-        <div class="deck-divider"></div>
-        <div class="deck-section-label">Jump into a subject</div>
-        <div class="deck-subjects-row" id="deckSubjectsRow">
-          ${enrolledSubjects.map(subj => {
-            const meta = getSubjectMeta(subj, grade);
-            const icon = meta.key === 'virtual_lab' ? '🧪' : (meta.icon || '📚');
-            return `<button type="button" class="deck-subject-pill" onclick="setSubject('${subj}')"><span>${icon}</span><span>${subj}</span></button>`;
-          }).join('')}
+        <div id="brainDeckRevisionContent" style="display: ${window.currentBrainMode === 'revision' ? 'block' : 'none'};">
+          <div id="revisionStudioMount"></div>
         </div>
       `;
 
@@ -9521,7 +12299,13 @@
       if (inputArea) inputArea.style.display = 'none';
 
       // Fetch dynamic, non-cliché spark
-      fetchDailySpark(s);
+      if (window.ElinguPlay) ElinguPlay.renderSpark(document.getElementById('playSparkMount'));
+
+      // Render Metro Topic Roadmap for Learn mode
+      loadTopicMetroRoadmap(curriculum, grade, enrolledSubjects[0] || 'Mathematics');
+
+      // The practice-exam hub loads when the learner opens Revision (setBrainMode), not on every visit to Home.
+      if (window.currentBrainMode === 'revision') loadRevisionStudio(curriculum, grade, enrolledSubjects[0] || 'Mathematics');
     }
 
     async function fetchDailySpark(student) {
@@ -9584,7 +12368,75 @@
     }
 
     // Set Subject
-    function setSubject(subject) {
+    let currentSubjectSubView = 'map'; // 'map' or 'chat'
+
+    function switchSubjectSubView(view) {
+      currentSubjectSubView = view;
+      const btnMap = document.getElementById('btnSubjModeMap');
+      const btnChat = document.getElementById('btnSubjModeChat');
+      const mapArea = document.getElementById('subjectMapArea');
+      const chatArea = document.getElementById('subjectChatArea');
+      const inputArea = document.querySelector('.input-area');
+      const meta = getSubjectMeta(currentSubject, currentGrade);
+
+      if (btnMap) btnMap.classList.toggle('active', view === 'map');
+      if (btnChat) btnChat.classList.toggle('active', view === 'chat');
+
+      const isBri = isBritishStudent(activeStudent);
+      const curriculum = isBri ? 'BRITISH' : 'CBC';
+      const grade = (activeStudent && (activeStudent.grade || activeStudent.yearGroup)) || currentGrade;
+
+      if (view === 'map') {
+        if (mapArea) mapArea.style.display = 'block';
+        if (chatArea) chatArea.style.display = 'none';
+        if (inputArea) inputArea.style.display = 'none';
+        loadTopicMetroRoadmap(curriculum, grade, currentSubject);
+      } else {
+        if (mapArea) mapArea.style.display = 'none';
+        if (chatArea) chatArea.style.display = 'block';
+        if (inputArea) inputArea.style.display = 'block';
+        if (input) input.placeholder = `Ask Elingu about ${meta.label}...`;
+        renderSubjectChatView(currentSubject);
+      }
+    }
+
+    function renderSubjectChatView(subject) {
+      const chatMount = document.getElementById('subjectChatMount');
+      if (!chatMount) return;
+      chatMount.innerHTML = '';
+
+      if (activeStudent) {
+        loadStudentSessionForSubject(subject);
+      } else {
+        history = [];
+        const { greeting, desc } = getDynamicWelcome(subject, currentGrade);
+        const wc = document.createElement('div');
+        wc.className = 'welcome-container';
+        wc.id = 'welcomeContainer';
+        wc.innerHTML = `
+          <div class="welcome-header">
+            <div class="welcome-avatar-wrapper">
+              <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Logo" class="large-avatar" />
+            </div>
+            <h2 id="welcomeGreeting">${greeting}</h2>
+            <p id="welcomeDesc">${desc}</p>
+          </div>
+        `;
+        chatMount.appendChild(wc);
+      }
+
+      updateWelcomeText();
+      const meta = getSubjectMeta(subject, currentGrade);
+      const questsTitle = document.getElementById('questsTitle');
+      if (questsTitle) questsTitle.textContent = `Active ${meta.short} Quests`;
+      renderQuests();
+      renderSuggestions();
+    }
+
+    function setSubject(subject, subView) {
+      if (subView) currentSubjectSubView = subView;
+      else currentSubjectSubView = 'map';
+
       // 1. Strict Senior School Pathway Isolation Check (CBC Only)
       const isBritish = isBritishStudent(activeStudent);
       const isSS = !isBritish && (currentSchoolLevel === 'SS' || (activeStudent && (activeStudent.schoolLevel === 'SS' || activeStudent.grade >= 10)));
@@ -9608,7 +12460,6 @@
         if (studentPathway === 'ARTS_SPORTS' && isArts) allowed = true;
 
         if (!allowed) {
-          // Hard block: Learner cannot switch to a subject outside their enrolled Senior School pathway
           console.warn(`[Pathway Isolation] Blocked access to ${subject} for student enrolled in ${studentPathway} pathway.`);
           return;
         }
@@ -9655,36 +12506,56 @@
         }
       }
 
-      // Restore chat input bar when entering any subject!
       const inputArea = document.querySelector('.input-area');
-      if (inputArea) inputArea.style.display = 'block';
+      const isBri = isBritishStudent(activeStudent);
+      const curriculum = isBri ? 'BRITISH' : 'CBC';
+      const grade = (activeStudent && (activeStudent.grade || activeStudent.yearGroup)) || currentGrade;
 
-      // Update input placeholder
-      input.placeholder = `Ask Elingu about ${meta.label}...`;
-
-      // Reset & load student chat history for this subject
-      if (activeStudent) {
-        loadStudentSessionForSubject(subject);
-      } else {
-        history = [];
-        const welcome = log.querySelector('.welcome-container');
+      if (meta.key === 'virtual_lab') {
+        if (inputArea) inputArea.style.display = 'block';
         log.innerHTML = '';
-        if (welcome) {
-          log.appendChild(welcome);
-          welcome.style.display = 'block';
-        } else {
-          recreateWelcomeContainer();
-        }
+        recreateWelcomeContainer();
+        renderDedicatedLabBench(subject, currentGrade);
+        return;
       }
 
-      updateWelcomeText();
+      log.innerHTML = '';
+      const subjectViewDiv = document.createElement('div');
+      subjectViewDiv.className = 'subject-cockpit-view';
+      subjectViewDiv.id = 'subjectCockpitView';
+      subjectViewDiv.innerHTML = `
+        <!-- Subject View Dual Switcher: Learn Map vs. Socratic Chat -->
+        <div class="brain-deck-mode-bar" id="subjectModeBar" style="margin-bottom: 16px;">
+          <button type="button" class="brain-mode-pill ${currentSubjectSubView === 'map' ? 'active' : ''}" id="btnSubjModeMap" onclick="switchSubjectSubView('map')">
+            <span class="mode-icon">🗺️</span>
+            <span class="mode-title">Learn Map</span>
+            <span class="mode-sub">• Topics & Subtopics</span>
+          </button>
+          <button type="button" class="brain-mode-pill ${currentSubjectSubView === 'chat' ? 'active' : ''}" id="btnSubjModeChat" onclick="switchSubjectSubView('chat')">
+            <span class="mode-icon">💬</span>
+            <span class="mode-title">Ask Socratic Tutor</span>
+            <span class="mode-sub">• Direct Dialogue</span>
+          </button>
+        </div>
 
-      const questsTitle = document.getElementById('questsTitle');
-      if (questsTitle) questsTitle.textContent = `Active ${meta.short} Quests`;
+        <div id="subjectMapArea" style="display: ${currentSubjectSubView === 'map' ? 'block' : 'none'};">
+          <div id="metroRoadmapMount" style="margin-top: 8px; margin-bottom: 24px;"></div>
+        </div>
 
-      renderQuests();
-      renderSuggestions();
-      renderDedicatedLabBench(subject, currentGrade);
+        <div id="subjectChatArea" style="display: ${currentSubjectSubView === 'chat' ? 'block' : 'none'};">
+          <div id="subjectChatMount"></div>
+        </div>
+      `;
+      log.appendChild(subjectViewDiv);
+
+      if (currentSubjectSubView === 'map') {
+        if (inputArea) inputArea.style.display = 'none';
+        loadTopicMetroRoadmap(curriculum, grade, subject);
+      } else {
+        if (inputArea) inputArea.style.display = 'block';
+        input.placeholder = `Ask Elingu about ${meta.label}...`;
+        renderSubjectChatView(subject);
+      }
     }
 
     function recreateWelcomeContainer() {
@@ -9695,7 +12566,7 @@
       wc.innerHTML = `
       <div class="welcome-header">
         <div class="welcome-avatar-wrapper">
-          <img src="/elingu-avatar.png" alt="Elingu Logo" class="large-avatar" />
+          <img decoding="async" src="/elingu-avatar.webp" alt="Elingu Logo" class="large-avatar" />
         </div>
         <h2 id="welcomeGreeting">${greeting}</h2>
         <p id="welcomeDesc">${desc}</p>
@@ -9877,6 +12748,45 @@
       form.dispatchEvent(new Event('submit'));
     }
 
+    // SECURITY: escape any text that did not come from our own code before it goes into innerHTML.
+    function escapeHtml(value) {
+      return String(value === undefined || value === null ? '' : value).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    // SECURITY: AI-generated diagrams are inserted as raw markup, so strip anything that can run code
+    // (scripts, event handlers, javascript: links, foreignObject, external references) and keep only drawing elements.
+    var SAFE_SVG_TAGS = ['svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'text', 'tspan',
+      'defs', 'marker', 'lineargradient', 'radialgradient', 'stop', 'clippath', 'title', 'desc', 'use'];
+    function sanitizeSvgMarkup(svgText) {
+      try {
+        var doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+        if (doc.getElementsByTagName('parsererror').length) return '';
+        var root = doc.documentElement;
+        if (!root || root.nodeName.toLowerCase() !== 'svg') return '';
+        var all = root.querySelectorAll('*');
+        for (var i = all.length - 1; i >= 0; i--) {
+          var el = all[i];
+          if (SAFE_SVG_TAGS.indexOf(el.nodeName.toLowerCase()) === -1) { el.remove(); continue; }
+          Array.prototype.slice.call(el.attributes).forEach(function (attr) {
+            var name = attr.name.toLowerCase();
+            var val = String(attr.value || '').trim().toLowerCase();
+            var isLink = name === 'href' || name === 'xlink:href';
+            if (name.indexOf('on') === 0 || (isLink && val.charAt(0) !== '#') || val.indexOf('javascript:') !== -1 || val.indexOf('url(http') !== -1) {
+              el.removeAttribute(attr.name);
+            }
+          });
+        }
+        Array.prototype.slice.call(root.attributes).forEach(function (attr) {
+          if (attr.name.toLowerCase().indexOf('on') === 0) root.removeAttribute(attr.name);
+        });
+        return new XMLSerializer().serializeToString(root);
+      } catch (e) {
+        return '';
+      }
+    }
+
     // Format incoming text for markdown, bolding, newlines, and inline SVGs
     function formatMessageText(text) {
       const svgTokens = [];
@@ -9920,11 +12830,30 @@
       // Step 6: Restore SVG graphics inside styled glass containers
       for (let i = 0; i < svgTokens.length; i++) {
         const token = `__SVG_TOKEN_${i}__`;
-        const svgHtml = `<div class="svg-shape-container" style="margin: 14px 0; background: #FFFFFF; padding: 16px; border: 1px solid var(--glass-border); border-radius: 12px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow-x: auto;">${svgTokens[i]}</div>`;
+        const svgHtml = `<div class="svg-shape-container" style="margin: 14px 0; background: #FFFFFF; padding: 16px; border: 1px solid var(--glass-border); border-radius: 12px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow-x: auto;">${sanitizeSvgMarkup(svgTokens[i])}</div>`;
         formatted = formatted.replace(token, svgHtml);
       }
 
       return formatted;
+    }
+
+    // Load KaTeX (our own copy, not a CDN) on demand, once.
+    var katexPromise = null;
+    function ensureKatex() {
+      if (typeof renderMathInElement === 'function') return Promise.resolve();
+      if (katexPromise) return katexPromise;
+      function loadScript(src) {
+        return new Promise(function (resolve) {
+          var el = document.createElement('script');
+          el.src = src; el.onload = resolve; el.onerror = resolve;   // a failed download must never block chatting
+          document.head.appendChild(el);
+        });
+      }
+      var css = document.createElement('link');
+      css.rel = 'stylesheet'; css.href = '/vendor/katex/katex.min.css';
+      document.head.appendChild(css);
+      katexPromise = loadScript('/vendor/katex/katex.min.js').then(function () { return loadScript('/vendor/katex/contrib/auto-render.min.js'); });
+      return katexPromise;
     }
 
     function addMessage(role, text) {
@@ -9938,15 +12867,23 @@
       div.className = 'msg ' + (role === 'user' ? 'child' : 'elingu');
       div.innerHTML = formatMessageText(text);
       log.appendChild(div);
-      renderMathInElement(div, {
-        delimiters: [
-          { left: '$$', right: '$$', display: true },
-          { left: '$', right: '$', display: false },
-          { left: '\\(', right: '\\)', display: false },
-          { left: '\\[', right: '\\]', display: true }
-        ],
-        throwOnError: false
-      });
+      // The maths library (about 80 KB) is only downloaded the first time a message actually contains maths.
+      if (/\$|\\\(|\\\[/.test(text)) {
+        ensureKatex().then(function () {
+          if (typeof renderMathInElement !== 'function') return;
+          try {
+            renderMathInElement(div, {
+              delimiters: [
+                { left: '$$', right: '$$', display: true },
+                { left: '$', right: '$', display: false },
+                { left: '\\(', right: '\\)', display: false },
+                { left: '\\[', right: '\\]', display: true }
+              ],
+              throwOnError: false
+            });
+          } catch (mathErr) { /* leave the plain text in place */ }
+        });
+      }
       log.scrollTop = log.scrollHeight;
     }
 
@@ -9973,6 +12910,7 @@
       charCounter.classList.remove('visible', 'warning', 'danger');
       addMessage('user', text);
       history.push({ role: 'user', content: text });
+      try { if (typeof notifySpaceTurnActivity === 'function') notifySpaceTurnActivity('chat', currentSubject); } catch (spaceErr) { /* saving spaces must never block chatting */ }
       
       input.disabled = true;
       sendBtn.disabled = true;
@@ -9993,27 +12931,14 @@
           method: 'POST',
           headers,
           body: JSON.stringify({
-            messages: history,
+            messages: history.slice(-30),
             grade: currentGrade,
             subject: currentSubject,
             studentId: activeStudent ? activeStudent.id : null
           }),
         });
 
-        // If a stale/mismatched token in sessionStorage caused a 401 while activeStudent is valid, clear the stale token and retry once
-        if (res.status === 401 && studentToken && activeStudent && activeStudent.id) {
-          sessionStorage.removeItem('elingu_student_token');
-          res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: history,
-              grade: currentGrade,
-              subject: currentSubject,
-              studentId: activeStudent.id
-            }),
-          });
-        }
+        // A 401 means the session expired: the existing needsAuth handling below asks the learner to sign in again.
 
         if (res.status === 401) {
           const errData = await res.json();
@@ -10035,6 +12960,7 @@
         }
 
         // Synchronize real-time Brain Streak, Points and Total Turns from server
+        if (data.studentStats && data.studentStats.celebrate && window.ElinguPlay) ElinguPlay.celebrate(data.studentStats.celebrate);
         if (data.studentStats && activeStudent) {
           if (data.studentStats.streak != null) activeStudent.streak = data.studentStats.streak;
           if (data.studentStats.points != null) activeStudent.points = data.studentStats.points;
@@ -10150,7 +13076,7 @@
                 try {
                   const res = await fetch('/api/transcribe', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, (sessionStorage.getItem('elingu_student_token') ? { 'Authorization': 'Bearer ' + sessionStorage.getItem('elingu_student_token') } : {})),
                     body: JSON.stringify({ audio: base64Audio, mimeType: audioBlob.type, subject: currentSubject })
                   });
                   const data = await res.json();
@@ -10413,6 +13339,11 @@
     }
 
     function logoutActiveStudent() {
+      // Tell the server too, so the token cannot be reused if someone copied it from this (maybe shared) device.
+      try {
+        const tok = sessionStorage.getItem('elingu_student_token');
+        if (tok) fetch('/api/students/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + tok }, keepalive: true }).catch(function () {});
+      } catch (e) { /* signing out must never fail because of this */ }
       localStorage.removeItem('elingu_active_student');
       sessionStorage.removeItem('elingu_student_session');
       sessionStorage.removeItem('elingu_student_token');
@@ -10439,7 +13370,8 @@
       const headerStreak = document.getElementById('headerStreakNum');
       const headerPoints = document.getElementById('headerPointsNum');
       if (headerStreak) headerStreak.textContent = streakVal;
-      if (headerPoints) headerPoints.textContent = pointsVal;
+      if (headerPoints && !(window.ElinguPlay && ElinguPlay.hasSummary())) headerPoints.textContent = pointsVal;
+      if (window.ElinguPlay) ElinguPlay.refresh();
 
       const studentBadgeBtn = document.getElementById('studentBadgeBtn');
       if (studentBadgeBtn && !studentBadgeBtn.classList.contains('comet-glow')) {
@@ -10892,7 +13824,7 @@
               a.innerHTML = `
                 <span class="mission-dot-pulse"></span>
                 <div>
-                  <div>📋 ${m.title}</div>
+                  <div>📋 ${escapeHtml(m.title)}</div>
                   <div style="font-size: 11px; color: #78350F; font-weight: normal;">From ${m.teacherName || 'Mwalimu'}</div>
                 </div>
               `;
@@ -10946,13 +13878,13 @@
             item.className = 'mission-popover-item';
             item.innerHTML = `
               <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                <span style="font-weight: 700; font-size: 13px; color: var(--text-primary); line-height: 1.3;">📋 ${m.title}</span>
+                <span style="font-weight: 700; font-size: 13px; color: var(--text-primary); line-height: 1.3;">📋 ${escapeHtml(m.title)}</span>
                 <span style="font-size: 10px; font-weight: 700; color: #0D3A26; background: rgba(34,197,94,0.18); padding: 2px 7px; border-radius: 6px; white-space: nowrap;">${m.subject}</span>
               </div>
               <div style="font-size: 11.5px; color: var(--text-secondary);">
-                Assigned by <strong>${m.teacherName || 'Mwalimu'}</strong> • ${m.items?.length || 0} questions
+                Assigned by <strong>${escapeHtml(m.teacherName || 'Mwalimu')}</strong> • ${m.items?.length || 0} questions
               </div>
-              <button type="button" class="btn-figma-primary" style="margin-top: 4px; padding: 6px 12px; font-size: 12px; font-weight: 700;" onclick="startMissionFromPopover('${m.id}')">
+              <button type="button" class="btn-figma-primary" style="margin-top: 4px; padding: 6px 12px; font-size: 12px; font-weight: 700;" onclick="startMissionFromPopover(this.dataset.id)" data-id="${escapeHtml(m.id)}">
                 Start Mission ▶
               </button>
             `;
@@ -10991,11 +13923,17 @@
     });
 
     // Real-time mission polling every 30 seconds
+    // (paused while the tab is hidden, slower in lite mode, and refreshed straight away when the learner comes back)
     setInterval(() => {
+      if (document.hidden) return;
+      if (window.ElinguLite && ElinguLite.isOn() && Math.floor(Date.now() / 30000) % 2) return;   // every 60 s in lite mode
       if (activeStudent && !isLockedOut) {
         refreshStudentMissions();
       }
     }, 30000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && activeStudent && !isLockedOut) refreshStudentMissions();
+    });
 
     let currentActiveMission = null;
     let currentMissionItemIndex = 0;
@@ -11166,6 +14104,7 @@
           })
         });
         const data = await res.json();
+        if (data.celebrate && window.ElinguPlay) ElinguPlay.celebrate(data.celebrate);
 
         if (fbBox) {
           if (data.isCorrect) {
@@ -11223,7 +14162,6 @@
       card.scrollIntoView({ behavior: 'smooth', block: 'end' });
       triggerAchievementNotification({
         title: 'Mission Completed! 🌟',
-        points: 50,
         message: 'Progress reported to Mwalimu!'
       });
       refreshStudentMissions();
@@ -11431,7 +14369,6 @@
         const draft = {
           realName,
           nickname,
-          password,
           email,
           studentRecovery,
           avatar: selectedSignUpAvatar || '🦁',
@@ -11473,7 +14410,6 @@
 
         if (realNameEl && draft.realName) realNameEl.value = draft.realName;
         if (nickEl && draft.nickname) nickEl.value = draft.nickname;
-        if (passEl && draft.password) passEl.value = draft.password;
         if (emailEl && draft.email) emailEl.value = draft.email;
         if (sRecEl && draft.studentRecovery) sRecEl.value = draft.studentRecovery;
 
@@ -11682,58 +14618,22 @@
     }
 
     // ── MILESTONE & ACHIEVEMENT CELEBRATION SYSTEM ───────────
-    function triggerAchievementNotification({ title = 'Milestone Reached! 🎉', points = 25, message = 'Great progress on your quest!' } = {}) {
-      // 1. Ring the notification bell visually
+    // Points are awarded by the server only (for real learning). This now just shows a friendly message and rings the bell.
+    function triggerAchievementNotification({ title = 'Nice work! 🎉', message = '' } = {}) {
       const bellBtn = document.getElementById('missionBellBtn');
       const bellBadge = document.getElementById('missionBellBadge');
       if (bellBtn) {
         bellBtn.classList.remove('bell-ring-active');
-        void bellBtn.offsetWidth; // Force CSS reflow
+        void bellBtn.offsetWidth;
         bellBtn.classList.add('bell-ring-active');
-        setTimeout(() => {
-          bellBtn.classList.remove('bell-ring-active');
-        }, 2200);
+        setTimeout(() => { bellBtn.classList.remove('bell-ring-active'); }, 2200);
       }
       if (bellBadge) {
         const cur = parseInt(bellBadge.textContent || '0', 10) || 0;
         bellBadge.textContent = cur + 1;
         bellBadge.style.display = 'flex';
       }
-
-      // 2. Award points to activeStudent and persist to backend
-      if (activeStudent) {
-        activeStudent.points = (activeStudent.points || 150) + points;
-        try {
-          localStorage.setItem('elingu_active_student', JSON.stringify(activeStudent));
-        } catch (e) {}
-
-        // Persist awarded points to backend database
-        fetch('/api/students/award-points', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ studentId: activeStudent.id, points })
-        }).catch(err => {
-          console.warn('Failed to persist awarded points to backend:', err);
-        });
-
-        updateStudentUI();
-      }
-
-      // 3. Make the student account tab glow like a comet going round it
-      const studentBtn = document.getElementById('studentBadgeBtn');
-      if (studentBtn) {
-        studentBtn.classList.add('comet-glow');
-        studentBtn.setAttribute('title', `🌟 Achievement Unlocked! +${points} Points! Click to view profile`);
-      }
-
-      // 4. Update the stats inside the account modal
-      const modalPoints = document.getElementById('accountModalPoints');
-      if (modalPoints && activeStudent) {
-        modalPoints.textContent = `${activeStudent.points} Pts`;
-      }
-
-      // 5. Show toast notification in chat
-      showAchievementToast(title, `+${points} Points • ${message}`);
+      showAchievementToast(title, message);
     }
 
     function showAchievementToast(title, subtitle) {
@@ -12287,11 +15187,6 @@
       const consentBox = document.getElementById('parentConsentCheckbox');
       const btnGo = document.getElementById('btnGoToStep2');
 
-      if (!realName) {
-        alert('Please enter the learner\'s real name.');
-        if (realNameInput) realNameInput.focus();
-        return;
-      }
       if (!nickname) {
         alert('Please choose a learner nickname.');
         document.getElementById('figmaNickname').focus();
@@ -12337,7 +15232,13 @@
         }
       }
       if (consentBox && !consentBox.checked) {
-        alert('Parent or guardian consent is required to create a learner profile.');
+        alert('Please tick the box to confirm you have told your parent or guardian. They will be asked to approve your account.');
+        consentBox.focus();
+        return;
+      }
+      if (!/^[\p{L}\p{N}\p{M}\p{Extended_Pictographic}\u200D\uFE0F ._\-]{2,24}$/u.test(nickname)) {
+        alert('Your nickname can only use letters, numbers, spaces, dots, dashes and underscores (2 to 24 characters).');
+        document.getElementById('figmaNickname').focus();
         return;
       }
 
@@ -12469,6 +15370,25 @@
 
       // Initialize subject chips for current curriculum
       renderStep2Subjects();
+
+      // Carry over what the visitor picked on the explore screen, so they don't choose the same things twice.
+      try {
+        const pick = window.__exploreChoice;
+        if (pick && pick.grade) {
+          const n = parseInt(pick.grade, 10);
+          if (isBritish && n >= 7 && n <= 11) selectStep2Year(n);
+          else if (!isBritish && n >= 6 && n <= 12) {
+            selectStep2Level(n >= 10 ? 'SS' : 'JSS');
+            selectStep2Grade(n);
+          }
+          if (pick.subject) {
+            document.querySelectorAll('#step2CompulsoryChips .figma-quest-chip, #step2ElectiveChips .figma-quest-chip').forEach(chip => {
+              const name = chip.getAttribute('data-subject') || chip.textContent.trim();
+              if (name === pick.subject && !chip.classList.contains('active')) chip.click();
+            });
+          }
+        }
+      } catch (e) { /* prefill is a nicety, never a blocker */ }
     }
 
     function goToSignUpStep1(saveDraft = true) {
@@ -12569,8 +15489,6 @@
       const pilotCode = pilotCodeEl ? pilotCodeEl.value.trim().toUpperCase() : '';
 
       const payload = {
-        realName: pendingSignUpData.realName,
-        fullName: pendingSignUpData.realName,
         handle: pendingSignUpData.handle,
         pin: pendingSignUpData.pin,
         email: pendingSignUpData.email,
@@ -13081,7 +15999,6 @@
           closeAuthOverlay();
           triggerAchievementNotification({
             title: 'Study Space Updated! 🌳',
-            points: 10,
             message: 'Your grade and subjects are now synced.'
           });
         } else {
@@ -13709,7 +16626,8 @@
     // Apply saved theme on page load
     (function applyTheme() {
       const saved = localStorage.getItem('elingTheme');
-      if (saved === 'dark') {
+      const prefersDark = !saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || prefersDark) {
         document.body.classList.add('theme-dark');
         updateThemeUI(true);
       }
@@ -13724,6 +16642,9 @@
         googleConfig = await res.json();
         if (googleConfig.configured && googleConfig.clientId) {
           loadGoogleScript(googleConfig.clientId);
+        } else {
+          // No Google sign-in on this server: don't show a button that can't work.
+          document.querySelectorAll('.google-auth-container').forEach(function (el) { el.style.display = 'none'; });
         }
       } catch (e) {
         console.warn('[GoogleAuth] Config fetch error:', e);
@@ -13825,9 +16746,12 @@
         }
         return;
       }
-      if (fb) fb.style.display = 'none';
-      closeGooglePromptModal();
-      await processGoogleAuth({ email, role: activeGoogleAuthRole });
+      // SECURITY: an email typed into a box is not proof of identity. Real Google sign-in is required.
+      if (fb) {
+        fb.style.display = 'block';
+        fb.textContent = 'Google sign-in is not available right now. Please sign in with your nickname and PIN.';
+      }
+      return;
     }
 
     async function handleGoogleAuthCallback(response) {
@@ -13874,7 +16798,6 @@
       closeAuthOverlay(true);
       triggerAchievementNotification({
         title: `Welcome, ${activeStudent.handle}! 🚀`,
-        points: 10,
         message: 'Ready to learn with Elingu.'
       });
 
@@ -13884,7 +16807,6 @@
           openCustomizeModal();
           triggerAchievementNotification({
             title: 'Complete Profile 📋',
-            points: 5,
             message: 'Please update your age and school in Account Settings.'
           });
         }, 800);
@@ -13936,7 +16858,6 @@
 
             triggerAchievementNotification({
               title: 'Google Connected! ✨',
-              points: 5,
               message: 'Set your 4-digit PIN and select your grade to complete setup.'
             });
 
@@ -14021,8 +16942,424 @@
     initStudentSystem();
     initGoogleAuth();
   </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+  <script>
+    // ============================================================
+    // ELINGU SPACE ENGINE: DAILY TIER-GATED SAVED SPACES & RESET
+    // ============================================================
+    let currentSessionTurnCount = 0;
+    let hasShownSpaceReminderThisSession = false;
+
+    function getDailySpaceLimitForTier(tier) {
+      const clean = String(tier || 'free').toLowerCase();
+      if (clean === 'free') return 1;
+      if (clean === 'standard') return 5;
+      if (clean === 'pilot' || clean === 'school' || clean === 'igcse_school') return 5;
+      return Infinity;
+    }
+
+    function getSpacesStoreKey() {
+      const stuId = (activeStudent && (activeStudent.id || activeStudent._id)) || 'guest';
+      return 'elingu_spaces_' + stuId;
+    }
+
+    function getSpacesStore() {
+      try {
+        const raw = localStorage.getItem(getSpacesStoreKey());
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (!parsed.dailySaves) parsed.dailySaves = {};
+          if (!Array.isArray(parsed.savedSpaces)) parsed.savedSpaces = [];
+          return parsed;
+        }
+      } catch (e) {}
+      return { savedSpaces: [], dailySaves: {} };
+    }
+
+    function saveSpacesStore(store) {
+      try {
+        localStorage.setItem(getSpacesStoreKey(), JSON.stringify(store));
+      } catch (e) {}
+      updateSavedSpacesBadge();
+    }
+
+    function getTodaySavesCount() {
+      const store = getSpacesStore();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      return store.dailySaves[todayStr] || 0;
+    }
+
+    function updateSavedSpacesBadge() {
+      const badgeSub = document.getElementById('savedSpacesDailySub');
+      const badgePill = document.getElementById('savedSpacesBadge');
+      if (!badgeSub) return;
+
+      const tier = (activeStudent && (activeStudent.subscriptionTier || activeStudent.plan)) || 'free';
+      const limit = getDailySpaceLimitForTier(tier);
+      const todayCount = getTodaySavesCount();
+
+      if (limit === Infinity) {
+        badgeSub.textContent = `${todayCount} saved • Unlimited`;
+        if (badgePill) badgePill.textContent = '∞ Vault';
+      } else {
+        badgeSub.textContent = `${todayCount}/${limit} daily space`;
+        if (badgePill) badgePill.textContent = `${todayCount}/${limit}`;
+      }
+    }
+
+    function showSpaceUpgradeModal(tier, limit) {
+      const modal = document.getElementById('childUpgradeModal');
+      const titleEl = document.getElementById('childUpgradeTitle');
+      const descEl = document.getElementById('childUpgradeDesc');
+      const pillEl = document.getElementById('childUpgradePill');
+
+      if (pillEl) pillEl.textContent = 'Daily Space Limit 🪐';
+      if (titleEl) titleEl.textContent = 'Daily Space Limit Reached! 🚀';
+      if (descEl) {
+        descEl.innerHTML = `You have used your <strong>${limit} daily Saved Space${limit === 1 ? '' : 's'}</strong> on the <strong>${tier.toUpperCase()}</strong> plan.<br><br>
+        Ask Mum or Dad to upgrade to <strong>Standard (5 spaces/day)</strong> or <strong>Premium (Unlimited Spaces)</strong> on the Parent Portal so you never lose track of your experiments or revision papers!`;
+      }
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.style.alignItems = 'center';
+        modal.style.justifyContent = 'center';
+      }
+    }
+
+    function showSmartSpaceReminder(type, title) {
+      if (hasShownSpaceReminderThisSession) return;
+      hasShownSpaceReminderThisSession = true;
+
+      const mount = document.getElementById('smartSpaceReminderMount');
+      if (!mount) return;
+
+      const reminder = document.createElement('div');
+      reminder.className = 'space-reminder-toast';
+      reminder.id = 'activeSpaceReminderToast';
+      reminder.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 20px;">💡</span>
+          <div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);">
+              You've completed ${currentSessionTurnCount} turns in this space!
+            </div>
+            <div style="font-size: 11.5px; color: var(--text-secondary);">
+              Don't lose track of your thinking—save your space so you can jump back in anytime.
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" class="space-action-btn space-save-btn" onclick="handleSaveMySpace('${type}', { title: '${(title || '').replace(/'/g, "\\'")}' }); closeSmartSpaceReminder();">
+            <span>💾 Save My Space 🪐</span>
+          </button>
+          <button type="button" class="space-action-btn space-new-btn" onclick="closeSmartSpaceReminder();" style="padding: 4px 8px;" title="Dismiss">
+            <span>✕</span>
+          </button>
+        </div>
+      `;
+      mount.innerHTML = '';
+      mount.appendChild(reminder);
+    }
+
+    function closeSmartSpaceReminder() {
+      const t = document.getElementById('activeSpaceReminderToast');
+      if (t) t.remove();
+    }
+
+    function notifySpaceTurnActivity(type, title) {
+      currentSessionTurnCount++;
+      if (currentSessionTurnCount === 8) {
+        showSmartSpaceReminder(type, title);
+      }
+    }
+
+    function handleSaveMySpace(type, extra = {}) {
+      const tier = (activeStudent && (activeStudent.subscriptionTier || activeStudent.plan)) || 'free';
+      const limit = getDailySpaceLimitForTier(tier);
+      const todayCount = getTodaySavesCount();
+
+      if (limit !== Infinity && todayCount >= limit) {
+        showSpaceUpgradeModal(tier, limit);
+        return;
+      }
+
+      const store = getSpacesStore();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const spaceTitle = extra.title || `${currentSubject} Space`;
+      const spaceSubject = extra.subject || currentSubject || 'General';
+
+      // Gather state snapshot
+      let spaceState = {};
+      if (type === 'socratic_stop') {
+        spaceState = {
+          subtopicId: currentActiveStationId,
+          history: [...currentSocraticHistory],
+          extra
+        };
+      } else if (type === 'revision') {
+        const workingInput = document.getElementById('studentWorkingInput');
+        const finalInput = document.getElementById('studentFinalAnswerInput');
+        spaceState = {
+          paperId: extra.paperId,
+          questionIndex: extra.questionIndex || currentRevisionQIdx,
+          studentWorking: workingInput ? workingInput.value : '',
+          studentFinal: finalInput ? finalInput.value : '',
+          extra
+        };
+      } else {
+        spaceState = {
+          history: [...history],
+          subject: currentSubject,
+          extra
+        };
+      }
+
+      const newSpace = {
+        id: 'space_' + Date.now(),
+        type: type || 'chat',
+        title: spaceTitle,
+        subject: spaceSubject,
+        savedAt: new Date().toISOString(),
+        turns: currentSessionTurnCount,
+        state: spaceState
+      };
+
+      store.savedSpaces.unshift(newSpace);
+      store.dailySaves[todayStr] = (store.dailySaves[todayStr] || 0) + 1;
+      saveSpacesStore(store);
+
+      // Telemetry for parents & teachers
+      try {
+        fetch('/api/analytics/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'SPACE_SAVED',
+            studentId: (activeStudent && activeStudent.id) || 'guest',
+            type,
+            title: spaceTitle,
+            subject: spaceSubject,
+            turns: currentSessionTurnCount,
+            savedAt: new Date().toISOString()
+          })
+        }).catch(() => {});
+      } catch (e) {}
+
+      // Friendly notification
+      showToastNotification(`🪐 Space Saved! Locked in 'My Saved Spaces' in your sidebar.`);
+      closeSmartSpaceReminder();
+    }
+
+    function handleNewSpace(type) {
+      if (currentSessionTurnCount > 0) {
+        const confirmSave = confirm("Ready for a New Space? 🚀\n\nClick 'OK' to save your work before starting fresh, or 'Cancel' to start a blank new space without saving.");
+        if (confirmSave) {
+          handleSaveMySpace(type);
+        }
+      }
+
+      // Reset workspace
+      currentSessionTurnCount = 0;
+      hasShownSpaceReminderThisSession = false;
+      closeSmartSpaceReminder();
+
+      if (type === 'socratic_stop') {
+        currentSocraticHistory = [];
+        const thread = document.getElementById('socraticThreadMount');
+        if (thread) thread.innerHTML = '';
+        const inputEl = document.getElementById('socraticStudentInput');
+        if (inputEl) { inputEl.value = ''; inputEl.disabled = false; }
+        const submitBtn = document.getElementById('socraticSubmitBtn');
+        if (submitBtn) submitBtn.disabled = false;
+        showToastNotification('🚀 Fresh Socratic space ready! Start your inquiry.');
+      } else if (type === 'revision') {
+        currentRevisionQIdx = 0;
+        const workingInput = document.getElementById('studentWorkingInput');
+        const finalInput = document.getElementById('studentFinalAnswerInput');
+        if (workingInput) workingInput.value = '';
+        if (finalInput) finalInput.value = '';
+        renderRevisionCockpitDOM();
+        showToastNotification('🚀 Fresh paper space ready! Begin at Question 1.');
+      } else if (type === 'lab') {
+        setSubject('Virtual Lab');
+        showToastNotification('🚀 Lab bench recalibrated for a fresh experiment!');
+      } else {
+        history = [];
+        log.innerHTML = '';
+        recreateWelcomeContainer();
+        showToastNotification('🚀 Fresh thinking space ready!');
+      }
+    }
+
+    function renderSavedSpacesView() {
+      history = [];
+      log.innerHTML = '';
+      const inputArea = document.querySelector('.input-area');
+      if (inputArea) inputArea.style.display = 'none';
+
+      const store = getSpacesStore();
+      const spaces = store.savedSpaces || [];
+      const tier = (activeStudent && (activeStudent.subscriptionTier || activeStudent.plan)) || 'free';
+      const limit = getDailySpaceLimitForTier(tier);
+      const todayCount = getTodaySavesCount();
+
+      const view = document.createElement('div');
+      view.className = 'saved-spaces-wrap';
+      view.id = 'savedSpacesView';
+      view.innerHTML = `
+        <div class="saved-spaces-header">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 26px;">🌌</span>
+                <h2 style="font-size: 22px; font-weight: 800; color: var(--text-primary); margin: 0;">My Saved Spaces</h2>
+              </div>
+              <p style="font-size: 13.5px; color: var(--text-secondary); margin: 4px 0 0 0;">
+                Your personal Brain Vault. Jump right back into any saved lab, paper, or socratic stop!
+              </p>
+            </div>
+            <div style="text-align: right;">
+              <div style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; background: rgba(16,185,129,0.12); color: #059669; border: 1px solid rgba(16,185,129,0.25);">
+                <span>📅 ${limit === Infinity ? `${todayCount} saved today • Unlimited Plan` : `${todayCount}/${limit} spaces saved today`}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="savedSpacesGridMount">
+          ${spaces.length === 0 ? `
+            <div style="text-align: center; padding: 48px 20px; background: var(--glass-white); border-radius: 20px; border: 1px dashed var(--glass-border);">
+              <div style="font-size: 44px; margin-bottom: 12px;">🪐</div>
+              <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px 0;">Your Brain Vault is Empty</h3>
+              <p style="font-size: 13.5px; color: var(--text-secondary); max-width: 440px; margin: 0 auto 20px;">
+                When you're doing a lab experiment, revising a past paper, or exploring a study stop, click <strong>💾 Save My Space 🪐</strong> to safely lock your progress here!
+              </p>
+              <button type="button" class="btn-primary" onclick="switchMainTab('brain-deck')" style="padding: 10px 20px; border-radius: 12px; font-weight: 700; cursor: pointer;">
+                <span>🚀 Explore Brain Deck</span>
+              </button>
+            </div>
+          ` : `
+            <div class="spaces-grid">
+              ${spaces.map(s => {
+                const dateStr = new Date(s.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                const typeIcon = s.type === 'lab' ? '🧪' : (s.type === 'revision' ? '📝' : (s.type === 'socratic_stop' ? '🗺️' : '💬'));
+                const typeLabel = s.type === 'lab' ? 'Lab Experiment' : (s.type === 'revision' ? 'Exam Revision' : (s.type === 'socratic_stop' ? 'Socratic Stop' : 'Study Dialogue'));
+                return `
+                  <div class="space-card" id="card_${s.id}">
+                    <div>
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 11px; font-weight: 700; color: var(--brand-green); background: rgba(16,185,129,0.1); padding: 3px 8px; border-radius: 6px;">
+                          ${typeIcon} ${typeLabel}
+                        </span>
+                        <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">${dateStr}</span>
+                      </div>
+                      <h4 style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0 0 6px 0;">${s.title}</h4>
+                      <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+                        Subject: <strong>${s.subject}</strong> • ${s.turns || 0} turns recorded
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--glass-border);">
+                      <button type="button" class="btn-primary" onclick="jumpBackIntoSavedSpace('${s.id}')" style="flex: 1; padding: 7px 10px; font-size: 12px; font-weight: 700; border-radius: 8px; cursor: pointer;">
+                        <span>🚀 Jump Back In</span>
+                      </button>
+                      <button type="button" onclick="deleteSavedSpace('${s.id}')" style="background: rgba(239, 68, 68, 0.08); color: #DC2626; border: 1px solid rgba(239, 68, 68, 0.2); padding: 7px 10px; font-size: 12px; font-weight: 700; border-radius: 8px; cursor: pointer;" title="Remove Space">
+                        <span>🗑️</span>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+      `;
+
+      log.appendChild(view);
+      const headerTitle = document.querySelector('header h1');
+      if (headerTitle) headerTitle.textContent = 'My Saved Spaces 🌌';
+    }
+
+    function deleteSavedSpace(spaceId) {
+      if (!confirm('Remove this saved space from your Brain Vault?')) return;
+      const store = getSpacesStore();
+      store.savedSpaces = (store.savedSpaces || []).filter(s => s.id !== spaceId);
+      saveSpacesStore(store);
+      renderSavedSpacesView();
+      showToastNotification('Space removed from vault.');
+    }
+
+    function jumpBackIntoSavedSpace(spaceId) {
+      const store = getSpacesStore();
+      const s = (store.savedSpaces || []).find(item => item.id === spaceId);
+      if (!s) return;
+
+      currentSessionTurnCount = s.turns || 0;
+      hasShownSpaceReminderThisSession = false;
+
+      if (s.type === 'revision') {
+        switchMainTab('brain-deck');
+        setBrainMode('revision');
+        if (s.state && s.state.paperId && activeRevisionPapers) {
+          const p = activeRevisionPapers.find(item => item.id === s.state.paperId);
+          if (p) {
+            activeRevisionPaper = p;
+            currentRevisionQIdx = s.state.questionIndex || 0;
+            renderRevisionCockpitDOM();
+            const w = document.getElementById('studentWorkingInput');
+            const f = document.getElementById('studentFinalAnswerInput');
+            if (w && s.state.studentWorking) w.value = s.state.studentWorking;
+            if (f && s.state.studentFinal) f.value = s.state.studentFinal;
+            showToastNotification(`🚀 Resumed: ${s.title}`);
+            return;
+          }
+        }
+      } else if (s.type === 'socratic_stop') {
+        setSubject(s.subject, 'map');
+        if (s.state && s.state.subtopicId) {
+          openSubtopicCockpit(s.state.subtopicId);
+          if (Array.isArray(s.state.history)) {
+            currentSocraticHistory = [...s.state.history];
+            const thread = document.getElementById('socraticThreadMount');
+            if (thread) {
+              s.state.history.forEach(turn => {
+                appendSocraticDialogueTurn(turn.user, turn.tutor);
+              });
+            }
+          }
+          showToastNotification(`🚀 Resumed: ${s.title}`);
+          return;
+        }
+      } else if (s.type === 'lab') {
+        setSubject('Virtual Lab');
+        showToastNotification(`🚀 Resumed: ${s.title}`);
+        return;
+      }
+
+      setSubject(s.subject, 'chat');
+      showToastNotification(`🚀 Resumed: ${s.title}`);
+    }
+
+    function showToastNotification(message) {
+      let toast = document.getElementById('elinguGlobalToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'elinguGlobalToast';
+        toast.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999; background: #0D3A26; color: #FFFFFF; padding: 12px 18px; border-radius: 12px; font-size: 13px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,0.18); border: 1px solid #4ADE80; display: flex; align-items: center; gap: 8px; transition: all 0.3s ease; opacity: 0; transform: translateY(20px); pointer-events: none;';
+        document.body.appendChild(toast);
+      }
+      toast.innerHTML = `<span>✨</span><span>${message}</span>`;
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateY(0)';
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(20px)';
+      }, 3500);
+    }
+
+    </script>
+  <script src="/i18n.js" defer></script>
+  <script src="/explore.js" defer></script>
+  <script src="/exam.js" defer></script>
+  <script src="/play.js" defer></script>
 </body>
 
 </html>

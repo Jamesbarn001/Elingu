@@ -3,7 +3,9 @@
 // Stipulated time cohorts with automatic expiration
 // ════════════════════════════════════════════════════════════
 
-const PILOT_REGISTRY = {
+// These built-in codes are public (they appear in old documents), so anyone who has seen them can use them.
+// To run pilots safely, set ELINGU_PILOT_CODES (see loadRegistry below): the built-in list is then ignored.
+const BUILT_IN_REGISTRY = {
   // School Cohorts (Institutional / JSS deployments)
   'PILOT2026': {
     code: 'PILOT2026',
@@ -50,6 +52,30 @@ const PILOT_REGISTRY = {
     features: ['All CBE subjects unlimited', 'Unlimited daily turns']
   }
 };
+
+/**
+ * ELINGU_PILOT_CODES is a JSON object, for example
+ *   {"KAMAU-7XQ2":{"type":"school","cohortName":"Kamau JSS","durationDays":60,"features":[]}}
+ * When it is set, only those codes work. When it is not set, the built-in list above is used (and a warning is printed).
+ */
+function loadRegistry() {
+  const raw = process.env.ELINGU_PILOT_CODES;
+  if (!raw) return { registry: BUILT_IN_REGISTRY, custom: false };
+  try {
+    const parsed = JSON.parse(raw);
+    const out = {};
+    Object.keys(parsed).forEach(k => { out[k.trim().toUpperCase()] = Object.assign({ code: k.trim().toUpperCase(), type: 'parent', durationDays: 30, features: [] }, parsed[k], { code: k.trim().toUpperCase() }); });
+    return { registry: out, custom: true };
+  } catch (e) {
+    console.error('[pilotConfig] ELINGU_PILOT_CODES is not valid JSON, so NO pilot codes will work:', e.message);
+    return { registry: {}, custom: true };
+  }
+}
+const loaded = loadRegistry();
+const PILOT_REGISTRY = loaded.registry;
+if (!loaded.custom && process.env.NODE_ENV === 'production') {
+  console.warn('[pilotConfig] WARNING: the built-in pilot codes (PILOT2026, PARENT2026, TRIAL30 ...) are active. Set ELINGU_PILOT_CODES to your own private codes.');
+}
 
 /**
  * Validate a pilot access code (case-insensitive)

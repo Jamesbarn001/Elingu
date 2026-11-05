@@ -20,7 +20,7 @@ module.exports = {
 
     // 2. Register teacher
     const idNumber = String(Math.floor(10000000 + Math.random() * 90000000));
-    const regRes = await ctx.api('/api/teacher/register', {
+    const regRes = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Mwalimu James',
@@ -48,7 +48,7 @@ module.exports = {
       body: { name: 'Sample School', county: 'Nairobi', adminCode, grades: [7], streams: { '7': ['East'] } }
     });
 
-    const res = await ctx.api('/api/teacher/register', {
+    const res = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Weak Pass Teacher',
@@ -72,7 +72,7 @@ module.exports = {
 
     const idNumber = String(Math.floor(10000000 + Math.random() * 90000000));
     const password = 'TeacherPass2026!';
-    await ctx.api('/api/teacher/register', {
+    await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Lucy',
@@ -105,7 +105,7 @@ module.exports = {
     });
 
     const idNumber = String(Math.floor(10000000 + Math.random() * 90000000));
-    await ctx.api('/api/teacher/register', {
+    await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. David',
@@ -133,7 +133,7 @@ module.exports = {
     });
 
     const idNumber = String(Math.floor(10000000 + Math.random() * 90000000));
-    await ctx.api('/api/teacher/register', {
+    await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Grace',

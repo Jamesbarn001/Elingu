@@ -26,7 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const { DATA_DIR } = require('./dataDir');
 const FLUSH_DELAY_MS = 250;
 const RETRY_DELAY_MS = 5000;
 
@@ -172,8 +172,26 @@ function flush() {
   return flushChain;
 }
 
+/**
+ * Upload every local data/*.json document to Postgres as it is on disk (used after the one-off encryption migration,
+ * so the cloud copy matches the encrypted local files). Requires a database; returns how many documents were sent.
+ */
+async function pushAllLocalToPostgres() {
+  if (!isEnabled()) return 0;
+  let count = 0;
+  for (const file of fs.readdirSync(DATA_DIR)) {
+    if (!file.endsWith('.json')) continue;
+    const raw = fs.readFileSync(path.join(DATA_DIR, file), 'utf8');
+    JSON.parse(raw); // validate before sending
+    await upsert(file, raw);
+    count++;
+  }
+  return count;
+}
+
 function status() {
   return {
+    encryption: { enabled: require('./cryptoVault').isEnabled() },
     mode: isEnabled() ? 'postgres' : 'local',
     hydrated,
     pendingWrites: pending.size,
@@ -201,4 +219,4 @@ function installShutdownHooks() {
   process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
-module.exports = { hydrate, persist, flush, status, installShutdownHooks, isEnabled };
+module.exports = { hydrate, persist, flush, status, installShutdownHooks, isEnabled, pushAllLocalToPostgres };

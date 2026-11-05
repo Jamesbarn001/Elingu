@@ -14,6 +14,16 @@ const emailService = require('./emailService');
 const smsService = require('./smsService');
 const { sanitizeHtml, verifyTeacherToken, generateTeacherToken } = authUtils;
 
+/** Send a one-time code by email, or by SMS when the account only has a phone number. Never throws. */
+async function deliverTeacherOtp({ teacher, otp, channel }, purpose) {
+  try {
+    if (channel === 'email') await emailService.sendOTPEmail({ parentEmail: teacher.email, otpCode: otp, purpose });
+    else if (teacher.phone) await smsService.sendOTPSMS({ to: teacher.phone, otpCode: otp, purpose });
+  } catch (e) {
+    console.error('[teacherRoutes] code delivery error:', e.message);
+  }
+}
+
 /**
  * Fallback curriculum quiz items if external LLM is offline
  */
@@ -635,9 +645,7 @@ module.exports = function (options = {}) {
     if (req.headers['x-teacher-token']) {
       return String(req.headers['x-teacher-token']).trim();
     }
-    if (req.query && req.query.token) {
-      return String(req.query.token).trim();
-    }
+    // SECURITY: tokens are never accepted in the URL (they end up in logs, history and Referer headers).
     return null;
   }
 
@@ -656,13 +664,25 @@ module.exports = function (options = {}) {
         return res.status(403).json({ error: 'Forbidden: Insufficient institutional privileges for this action.' });
       }
 
+      const rec = teacherStore.getTeacherById(decoded.id, true);
+      if (!rec && teacherStore.isTeacherRevoked(decoded.id)) {
+        return res.status(401).json({ error: 'Unauthorized: This account no longer has access.' });
+      }
+      if (rec) {
+        if (rec.tokensValidAfter && Number(decoded.iat || 0) <= rec.tokensValidAfter) {
+          return res.status(401).json({ error: 'Unauthorized: Please sign in again.' });
+        }
+        if (rec.approvalStatus === 'rejected' || rec.approvalStatus === 'pending_approval') {
+          return res.status(403).json({ error: 'Forbidden: This account is not approved.' });
+        }
+      }
       req.teacher = decoded;
       next();
     };
   }
 
   function setSecurityHeaders(res) {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self';");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self';");
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   }
@@ -679,10 +699,12 @@ module.exports = function (options = {}) {
         headteacherName, headteacherIdNumber, headteacherEmail, headteacherPhone, headteacherPassword
       } = req.body;
 
-      const school = teacherStore.createSchool({ name, county, adminCode, grades, streams, curriculum, examBoard, createdBy });
+      // A school's code is always generated for it (unguessable). Chosen codes are accepted only by the automated tests.
+      const school = teacherStore.createSchool({ name, county, adminCode: process.env.NODE_ENV === 'test' ? adminCode : undefined, grades, streams, curriculum, examBoard, createdBy: 'self_registration' });
 
       let headteacher = null;
       let token = null;
+      let devOtp = null;
 
       // Option 1: Headteacher provisioning
       if (headteacherName || headteacherEmail || headteacherPhone || headteacherPassword) {
@@ -695,8 +717,12 @@ module.exports = function (options = {}) {
         if (!headteacherPassword) {
           return res.status(400).json({ error: 'Headteacher password is required.' });
         }
+        if (!headteacherEmail || !String(headteacherEmail).includes('@')) {
+          return res.status(400).json({ error: 'A Headteacher email address is required so we can confirm it is really you.' });
+        }
 
         headteacher = await teacherStore.createTeacher({
+          requireEmailVerification: true,
           name: headteacherName,
           idNumber: headteacherIdNumber,
           email: headteacherEmail,
@@ -707,7 +733,12 @@ module.exports = function (options = {}) {
           assignments: []
         });
 
-        token = generateTeacherToken(headteacher);
+        // No sign-in yet: the Headteacher must first confirm their email with the 6-digit code.
+        const sent = teacherStore.requestTeacherOtp(headteacherEmail);
+        if (sent) {
+          await deliverTeacherOtp(sent, 'confirm your Elingu school account');
+          if (process.env.NODE_ENV === 'test') devOtp = sent.otp;
+        }
       }
 
       res.json({
@@ -715,8 +746,10 @@ module.exports = function (options = {}) {
         school,
         headteacher,
         token,
+        verificationRequired: !!headteacher,
+        ...(devOtp ? { devOtp } : {}),
         message: headteacher
-          ? `School "${school.name}" and Headteacher account for ${headteacher.name} provisioned successfully.`
+          ? `School "${school.name}" created. We sent a 6-digit code to ${headteacher.email}. Enter it to activate the Headteacher account.`
           : `School "${school.name}" provisioned successfully.`
       });
     } catch (err) {
@@ -773,6 +806,30 @@ module.exports = function (options = {}) {
     } catch (err) {
       console.error('[teacherRoutes] error in macro-analytics:', err);
       res.status(500).json({ error: 'Failed to retrieve whole-school macro analytics.' });
+    }
+  });
+
+  // Safeguarding inbox: alerts raised when a learner's message suggests distress or harm. Leaders only. Parents are not told automatically.
+  router.get('/api/school/safeguarding', requireTeacherAuth(['school_admin', 'deputy_headteacher']), (req, res) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      res.json({ success: true, alerts: teacherStore.getSafeguardingAlerts(req.teacher.schoolId) });
+    } catch (err) {
+      console.error('[teacherRoutes] safeguarding list error:', err.message);
+      res.status(500).json({ error: 'Could not load safeguarding alerts.' });
+    }
+  });
+
+  router.post('/api/school/safeguarding/:alertId', requireTeacherAuth(['school_admin', 'deputy_headteacher']), (req, res) => {
+    try {
+      const out = teacherStore.updateSafeguardingAlert(req.teacher.schoolId, String(req.params.alertId), {
+        status: req.body && req.body.status, note: req.body && req.body.note, reviewedBy: req.teacher.name || req.teacher.id
+      });
+      if (!out.success) return res.status(out.error === 'Alert not found.' ? 404 : 400).json({ error: out.error });
+      res.json({ success: true, alert: out.alert });
+    } catch (err) {
+      console.error('[teacherRoutes] safeguarding update error:', err.message);
+      res.status(500).json({ error: 'Could not update the alert.' });
     }
   });
 
@@ -867,11 +924,12 @@ module.exports = function (options = {}) {
         password,
         role: resolvedRole,
         schoolId: school.id,
-        assignments: assignments || []
+        assignments: assignments || [],
+        requireApproval: true
       });
 
-      const token = generateTeacherToken(teacher);
-      res.json({ success: true, token, teacher, schoolName: school.name });
+      // The school code alone is not enough to get in: a leader of the school approves each person first.
+      res.json({ success: true, pendingApproval: true, teacher, schoolName: school.name, message: 'Request sent. Your Headteacher must approve your account before you can sign in.' });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
@@ -934,7 +992,8 @@ module.exports = function (options = {}) {
         }
       }
 
-      const isDev = process.env.NODE_ENV !== 'production';
+      // The 2FA code is only echoed back to automated tests; a host that forgets NODE_ENV=production must not leak it.
+      const isDev = process.env.NODE_ENV === 'test';
       res.json({
         success: true,
         message: `A 6-digit authorization code has been dispatched to ${teacher.phone ? 'mobile (' + teacher.phone.slice(-4) + ')' : ''} ${teacher.email ? 'and email' : ''}.`,
@@ -1070,7 +1129,7 @@ module.exports = function (options = {}) {
       if (!identifier || !password) return res.status(400).json({ error: 'Identifier and password are required.' });
       const result = await teacherStore.verifyTeacherLogin(identifier, password);
       if (!result.success) {
-        return res.status(result.locked ? 423 : 401).json({ error: result.error, locked: result.locked });
+        return res.status(result.locked ? 423 : (result.code ? 403 : 401)).json({ error: result.error, locked: result.locked, code: result.code });
       }
       const token = generateTeacherToken(result.teacher);
       const school = teacherStore.getSchoolById(result.teacher.schoolId);
@@ -1091,6 +1150,60 @@ module.exports = function (options = {}) {
     } catch (err) {
       res.status(500).json({ error: 'Teacher login failed.' });
     }
+  });
+
+  // ── Confirm email, forgot password, staff approval ──
+  const sameAnswer = (extra) => Object.assign({ success: true, message: 'If that account exists, a code has been sent. It is valid for 10 minutes.' }, extra || {});
+
+  router.post('/api/teacher/verify-email', async (req, res) => {
+    const out = teacherStore.verifyTeacherEmailWithOtp(req.body && (req.body.identifier || req.body.email), req.body && req.body.otp);
+    if (!out.success) return res.status(400).json({ error: out.error });
+    res.json({ success: true, message: 'Email confirmed. You can sign in now.' });
+  });
+
+  router.post('/api/teacher/resend-verification', async (req, res) => {
+    try {
+      const id = req.body && (req.body.identifier || req.body.email);
+      const sent = teacherStore.requestTeacherOtp(id);
+      // Only accounts that are still waiting to be confirmed get a code, and the answer is the same either way.
+      if (sent && sent.teacher.emailVerified === false) {
+        await deliverTeacherOtp(sent, 'confirm your Elingu school account');
+        return res.json(sameAnswer(process.env.NODE_ENV === 'test' ? { devOtp: sent.otp } : null));
+      }
+      res.json(sameAnswer());
+    } catch (e) { res.status(500).json({ error: 'Could not send a code.' }); }
+  });
+
+  router.post('/api/teacher/request-reset', async (req, res) => {
+    try {
+      const sent = teacherStore.requestTeacherOtp(req.body && (req.body.identifier || req.body.email));
+      if (sent) {
+        await deliverTeacherOtp(sent, 'reset your Elingu teacher password');
+        return res.json(sameAnswer(process.env.NODE_ENV === 'test' ? { devOtp: sent.otp } : null));
+      }
+      res.json(sameAnswer());
+    } catch (e) { res.status(500).json({ error: 'Could not send a code.' }); }
+  });
+
+  router.post('/api/teacher/reset-password', async (req, res) => {
+    try {
+      const b = req.body || {};
+      const out = await teacherStore.resetTeacherPasswordWithOtp(b.identifier || b.email, b.otp, b.newPassword);
+      if (!out.success) return res.status(400).json({ error: out.error });
+      res.json({ success: true, message: 'Password changed. Please sign in with your new password.' });
+    } catch (e) { res.status(500).json({ error: 'Could not reset the password.' }); }
+  });
+
+  router.get('/api/staff/pending', requireTeacherAuth(['school_admin', 'deputy_headteacher']), (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, staff: teacherStore.getPendingStaff(req.teacher.schoolId) });
+  });
+
+  router.post('/api/staff/decision', requireTeacherAuth(['school_admin', 'deputy_headteacher']), (req, res) => {
+    const b = req.body || {};
+    const out = teacherStore.decideStaff(req.teacher.schoolId, String(b.teacherId || ''), b.approve === true);
+    if (!out.success) return res.status(404).json({ error: out.error });
+    res.json({ success: true, teacher: out.teacher });
   });
 
   // GET /api/teacher/dashboard-data
@@ -1210,7 +1323,7 @@ module.exports = function (options = {}) {
           role: teacher.role,
           schoolId: teacher.schoolId,
           schoolName: school ? school.name : 'Elingu School',
-          idNumber: teacher.idNumber,
+          idNumber: teacherStore.maskIdNumber(teacher.idNumber),
           email: teacher.email,
           phone: teacher.phone,
           assignments: teacher.assignments || []
@@ -1526,8 +1639,9 @@ Output format: Return ONLY a valid JSON array of question objects with NO markdo
   // POST /api/mission/create
   router.post('/api/mission/create', requireTeacherAuth(), (req, res) => {
     try {
-      const schoolId = req.body.schoolId || req.teacher?.schoolId;
+      const schoolId = req.body.schoolId;
       if (!schoolId) return res.status(400).json({ error: 'schoolId is required.' });
+      if (typeof schoolId === 'string' && /['";\\=]|--|\/\*/.test(schoolId)) return res.status(400).json({ error: 'Invalid characters in schoolId parameter.' });
       if (req.teacher.schoolId !== schoolId) {
         return res.status(403).json({ error: 'Forbidden: Cannot push missions to another school.' });
       }
@@ -1640,6 +1754,12 @@ Output format: Return ONLY a valid JSON array of question objects with NO markdo
       if (!missionId || !studentId || !itemId) {
         return res.status(400).json({ error: 'missionId, studentId, and itemId are required.' });
       }
+      // SECURITY: only the learner themselves may answer for themselves (this route used to trust any studentId).
+      const rawAuth = String(req.headers['authorization'] || req.headers['x-student-token'] || '');
+      const tok = rawAuth.replace(/^Bearer /, '').trim();
+      const who = tok ? authUtils.verifyStudentToken(tok) : null;
+      if (!who) return res.status(401).json({ error: 'Please sign in to answer a mission.' });
+      if (who.id !== studentId) return res.status(403).json({ error: 'Forbidden: you can only answer for yourself.' });
       const result = teacherStore.recordMissionInteraction({
         missionId,
         studentId,
@@ -1651,7 +1771,15 @@ Output format: Return ONLY a valid JSON array of question objects with NO markdo
         hintIndex,
         hintReadingTimeMs
       });
-      res.json(result);
+      // XP for evidence of learning: the first time a learner answers a mission question correctly (once per question).
+      let celebrate = null;
+      if (result && result.correct) {
+        try {
+          const learner = studentStore.getStudentById(studentId);
+          if (learner) celebrate = require('./gamification').onMissionItemCorrect(learner, missionId, itemId);
+        } catch (gErr) { /* rewards must never break missions */ }
+      }
+      res.json(celebrate ? { ...result, celebrate } : result);
     } catch (err) {
       const status = (err.code === 'FORBIDDEN_STREAM') ? 403 : (err.code === 'NOT_FOUND' ? 404 : 400);
       res.status(status).json({ error: err.message });
@@ -1793,8 +1921,10 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
 
   function escapeCsv(field) {
     if (field === null || field === undefined) return '""';
-    const str = String(field).replace(/"/g, '""');
-    return `"${str}"`;
+    let str = String(field);
+    // SECURITY: spreadsheets run text that starts with = + - @ (or tab/CR) as a formula. Prefix an apostrophe to defuse it.
+    if (/^[=+\-@\t\r]/.test(str)) str = "'" + str;
+    return '"' + str.replace(/"/g, '""') + '"';
   }
 
   // GET /api/reports/stream-summary (Class / Stream / Subject summary)
@@ -1803,6 +1933,20 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
       const { schoolId, grade, stream, subject, format = 'json' } = req.query;
       if (!schoolId || !grade || !stream) {
         return res.status(400).json({ error: 'schoolId, grade, and stream are required.' });
+      }
+
+      // Defense-in-depth: Strict input validation against injection and metacharacters
+      // Note: only block metacharacters, NOT words like "and"/"or" — real subject
+      // names such as "History and Citizenship" or "Sports and Recreation" contain them.
+      const injectionPattern = /['";\\=]|--|\/\*/;
+      if (typeof subject === 'string' && injectionPattern.test(subject)) {
+        return res.status(400).json({ error: 'Invalid characters in subject parameter.' });
+      }
+      if (typeof stream === 'string' && injectionPattern.test(stream)) {
+        return res.status(400).json({ error: 'Invalid characters in stream parameter.' });
+      }
+      if (typeof schoolId === 'string' && injectionPattern.test(schoolId)) {
+        return res.status(400).json({ error: 'Invalid characters in schoolId parameter.' });
       }
 
       if (req.teacher.schoolId !== schoolId) {
@@ -2047,6 +2191,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
     try {
       const { studentId, format = 'json' } = req.query;
       if (!studentId) return res.status(400).json({ error: 'studentId is required.' });
+      if (typeof studentId === 'string' && /['";\\=]|--|\/\*/.test(studentId)) return res.status(400).json({ error: 'Invalid characters in studentId parameter.' });
 
       const student = studentStore.getStudentById(studentId);
       if (!student) return res.status(404).json({ error: 'Student not found.' });
@@ -2212,6 +2357,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
     try {
       const { schoolId, format = 'json' } = req.query;
       if (!schoolId) return res.status(400).json({ error: 'schoolId is required.' });
+      if (typeof schoolId === 'string' && /['";\\=]|--|\/\*/.test(schoolId)) return res.status(400).json({ error: 'Invalid characters in schoolId parameter.' });
 
       if (req.teacher.schoolId !== schoolId) {
         return res.status(403).json({ error: 'Forbidden: Cannot access institutional audits for another school.' });
@@ -2375,9 +2521,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Elingu Mwalimu — Teacher & Institutional CBE Suite</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/fonts.css">
   <style>
     :root {
       --primary: #0D3A26;
@@ -3097,9 +3241,12 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
     .auth-divider-line span {
       padding: 0 10px;
     }
+    .i18n-switch { display: inline-flex; border: 2px solid var(--border-warm, #0D3A26); border-radius: 12px; overflow: hidden; }
+    .i18n-switch button { min-height: 36px; padding: 0 12px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; }
+    .i18n-switch button[aria-pressed="true"] { background: #0D3A26; color: #fff; }
   </style>
 </head>
-<body>
+<body data-i18n-scope>
 
   <div class="portal-container">
 
@@ -3107,7 +3254,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
     <header class="portal-header-bar">
       <div class="brand-wrap">
         <div class="brand-logo-circle">
-          <img src="/elingu-avatar.png" alt="Elingu Logo" class="brand-logo-img" />
+          <img src="/elingu-avatar.webp" alt="Elingu Logo" class="brand-logo-img" />
         </div>
         <div>
           <div class="brand-title">Elingu Mwalimu</div>
@@ -3115,7 +3262,8 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
         </div>
       </div>
       <div class="header-badges">
-        <span class="header-badge">🛡️ KDPA 2019 Protected</span>
+        <a class="header-badge" href="/privacy" target="_blank" rel="noopener" style="text-decoration:none">Privacy notice</a>
+        <span data-lang-slot></span>
         <button id="themeToggleBtn" onclick="toggleTheme()" style="background: var(--card-bg); border: 1px solid var(--border-warm); color: var(--text-sub); padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px;">🌙 Dark</button>
         <div class="nav-user" id="navUserArea" style="display: none;">
           <span class="user-pill" id="userPillText">Mwalimu</span>
@@ -3176,7 +3324,9 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
           </div>
           <div id="loginFeedback" style="display:none; font-size: 13px; margin-bottom: 12px; color: #DC2626;"></div>
           <button type="submit" class="btn-primary" id="btnLoginSubmit">Sign In to Dashboard 🚀</button>
+          <p style="text-align: center; margin: 12px 0 0 0;"><a href="#" id="linkForgot" style="font-size: 13px; color: var(--primary);" onclick="showCodePanel('reset', document.getElementById('loginId').value.trim()); return false;">Forgot your password?</a></p>
         </form>
+        <div id="codePanel" role="region" aria-label="Confirm your account" style="display: none; margin-top: 16px; padding: 14px; border: 2px solid var(--border-warm); border-radius: 14px;"></div>
 
         <!-- 2. Teacher Registration Form -->
         <form id="formRegister" onsubmit="handleTeacherRegister(event)" style="display: none;">
@@ -3213,7 +3363,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
           </div>
           <div class="form-group">
             <label class="form-label">School Admin Code</label>
-            <input type="text" id="regAdminCode" class="form-input" placeholder="e.g. KUJ-ADMIN" style="text-transform: uppercase;" required />
+            <input type="text" id="regAdminCode" class="form-input" placeholder="e.g. KUJ-7K2PQX" style="text-transform: uppercase;" required />
             <span style="font-size: 11.5px; color: var(--slate-600);">Provided by your Headteacher or Elingu team.</span>
           </div>
           <div class="form-group">
@@ -3308,10 +3458,8 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
               <option value="BRITISH">British International Curriculum (Cambridge Checkpoint &amp; IGCSE)</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Custom Admin Code (Optional)</label>
-            <input type="text" id="schAdminCode" class="form-input" placeholder="Leave blank to auto-generate" style="text-transform: uppercase;" />
-          </div>
+          <p style="font-size: 12.5px; color: var(--text-sub); margin: 0 0 12px 0;">We will generate a secure school code for you. You will see it after you confirm your email.</p>
+          <input type="hidden" id="schAdminCode" value="" />
           <div class="form-group">
             <label class="form-label" id="schGradesHeaderLabel">Grades / Year Groups Offered</label>
             <div style="display: flex; gap: 14px; font-size: 13px; font-weight: 500; flex-wrap: wrap;" id="schGradesContainer">
@@ -3591,7 +3739,21 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
 
       <!-- Tab 4: Headteacher Command Cockpit & Bird's-Eye View -->
       <div id="viewDirectory" style="display: none;">
-        
+
+        <!-- Staff waiting for approval (leaders only) -->
+        <section aria-labelledby="stTitle" style="background: #F0F9FF; border: 2px solid #7DD3FC; border-radius: 16px; padding: 16px; margin-bottom: 18px;">
+          <h2 id="stTitle" style="font-size: 18px; margin: 0 0 4px 0; color: #0C4A6E;">Staff waiting for approval</h2>
+          <p style="font-size: 13px; margin: 0 0 10px 0; color: #0C4A6E;">People who used your school code. Only approve colleagues you know.</p>
+          <div id="stList" role="status">Loading...</div>
+        </section>
+
+        <!-- Safeguarding inbox (leaders only) -->
+        <section aria-labelledby="sgTitle" style="background: #FFF7ED; border: 2px solid #FDBA74; border-radius: 16px; padding: 16px; margin-bottom: 18px;">
+          <h2 id="sgTitle" style="font-size: 18px; margin: 0 0 4px 0; color: #7C2D12;">Safeguarding inbox</h2>
+          <p style="font-size: 13px; margin: 0 0 10px 0; color: #7C2D12;">Raised when a learner's message suggests distress or harm. Parents are not told automatically. Childline Kenya: 116.</p>
+          <div id="sgList" role="status">Loading...</div>
+        </section>
+
         <!-- Whole-School Macro Bento KPIs -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
           <div>
@@ -3798,7 +3960,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
           <span style="font-size: 28px;">🔐</span>
           <div>
             <h3 style="font-family: var(--font-heading); font-size: 20px; color: var(--primary); margin: 0;" id="twoFaModalTitle">Institutional 2FA Authorization</h3>
-            <span style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;">KENYA DATA PROTECTION &amp; GOVERNANCE COMPLIANT</span>
+            <span style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;">A CODE WILL BE SENT TO THE HEADTEACHER</span>
           </div>
         </div>
         
@@ -3881,12 +4043,20 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
     </div>
   </div>
 
+  <script src="/i18n.js" defer></script>
   <script>
     let activeTeacher = null;
     let activeSchool = null;
     let activeStreams = [];
     let currentSelectedStream = null;
     let generatedItemsCache = [];
+
+    // SECURITY: every value that came from a database record (names, titles, answers) must be escaped before it is put into innerHTML.
+    function esc(value) {
+      return String(value === undefined || value === null ? '' : value).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
 
     function getTeacherToken() {
       return localStorage.getItem('elingu_mwalimu_token') || '';
@@ -3967,6 +4137,49 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
       }
     }
 
+    // Confirm-your-email and forgot-password, in one small panel. Everything shown is set with textContent.
+    function showCodePanel(mode, identifier, intro) {
+      var host = document.getElementById('codePanel');
+      host.textContent = '';
+      host.style.display = 'block';
+      function el(tag, text, css) { var e = document.createElement(tag); if (text) e.textContent = text; if (css) e.style.cssText = css; host.appendChild(e); return e; }
+      function field(label, type, ac) {
+        var l = el('label', label, 'display:block;font-size:13px;font-weight:600;margin-top:8px;');
+        var i = document.createElement('input'); i.type = type; i.className = 'form-input'; i.autocomplete = ac || 'off';
+        host.appendChild(i); l.appendChild(document.createTextNode('')); return i;
+      }
+      var isReset = mode === 'reset';
+      el('h3', isReset ? 'Reset your password' : 'Confirm your email', 'margin:0 0 6px 0;font-size:17px;');
+      el('p', intro || (isReset ? 'Enter your email or phone number and we will send a 6-digit code.' : 'Enter the 6-digit code we sent you.'), 'font-size:13px;margin:0 0 6px 0;');
+      var who = field('Email or phone number', 'text', 'username');
+      who.value = identifier || '';
+      var send = document.createElement('button'); send.type = 'button'; send.className = 'btn-primary'; send.style.cssText = 'margin-top:10px;width:auto;padding:0 16px;';
+      send.textContent = isReset ? 'Send me a code' : 'Send a new code'; host.appendChild(send);
+      var code = field('6-digit code', 'text', 'one-time-code'); code.inputMode = 'numeric'; code.maxLength = 6;
+      var pw = null;
+      if (isReset) { pw = field('New password', 'password', 'new-password'); }
+      var go = document.createElement('button'); go.type = 'button'; go.className = 'btn-primary'; go.style.cssText = 'margin-top:10px;width:auto;padding:0 16px;';
+      go.textContent = isReset ? 'Change my password' : 'Confirm my email'; host.appendChild(go);
+      var msg = el('div', '', 'font-size:13px;margin-top:10px;'); msg.setAttribute('role', 'status');
+      function say(t, bad) { msg.textContent = t; msg.style.color = bad ? '#DC2626' : '#065F46'; }
+      async function post(url, body) {
+        var r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        var d = await r.json().catch(function () { return {}; });
+        return { ok: r.ok, d: d };
+      }
+      send.addEventListener('click', async function () {
+        var o = await post(isReset ? '/api/teacher/request-reset' : '/api/teacher/resend-verification', { identifier: who.value.trim() });
+        say(o.ok ? (o.d.message || 'Code sent.') : (o.d.error || 'Could not send a code.'), !o.ok);
+      });
+      go.addEventListener('click', async function () {
+        var body = { identifier: who.value.trim(), otp: code.value.trim() };
+        if (isReset) body.newPassword = pw.value;
+        var o = await post(isReset ? '/api/teacher/reset-password' : '/api/teacher/verify-email', body);
+        say(o.ok ? (o.d.message || 'Done.') : (o.d.error || 'That did not work.'), !o.ok);
+        if (o.ok) { var lid = document.getElementById('loginId'); if (lid && !lid.value) lid.value = who.value.trim(); }
+      });
+    }
+
     async function handleTeacherLogin(e) {
       e.preventDefault();
       const id = document.getElementById('loginId').value.trim();
@@ -3993,6 +4206,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
         } else {
           fb.style.display = 'block';
           fb.textContent = data.error || 'Login failed.';
+          if (data.code === 'EMAIL_NOT_VERIFIED') showCodePanel('verify', id);
         }
       } catch (err) {
         fb.style.display = 'block';
@@ -4034,8 +4248,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
         });
         const data = await res.json();
         if (data.success) {
-          if (data.token) localStorage.setItem('elingu_mwalimu_token', data.token);
-          alert('Hongera Mwalimu! Account created for ' + data.schoolName + '. Please log in now.');
+          alert('Request sent to ' + data.schoolName + '. Your Headteacher must approve your account before you can sign in.');
           switchAuthTab('login');
         } else {
           fb.style.display = 'block';
@@ -4278,13 +4491,11 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
         });
         const data = await res.json();
         if (data.success) {
-          if (data.token && data.headteacher) {
-            localStorage.setItem('elingu_mwalimu_token', data.token);
-            activeTeacher = data.headteacher;
-            alert('Hongera! Institution "' + data.school.name + '" and Headteacher account for ' + data.headteacher.name + ' created successfully!\\n\\nSchool Admin Code: ' + data.school.adminCode + '\\n\\nShare this Admin Code with your teachers to register them.');
-            loadDashboardData();
+          if (data.verificationRequired && data.headteacher) {
+            switchAuthTab('login');
+            showCodePanel('verify', data.headteacher.email, 'School created. We emailed a 6-digit code to ' + data.headteacher.email + '. Enter it to activate your Headteacher account.');
           } else {
-            alert('School successfully provisioned!\\nAdmin Code: ' + data.school.adminCode + '\\nShare this code with your teachers.');
+            alert('School created. Sign in with your Headteacher account to see your school code.');
             switchAuthTab('login');
           }
         } else {
@@ -4411,7 +4622,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
             <div style="display: flex; align-items: center; gap: 10px;">
               <span style="font-size: 20px;">\${s.avatar || '🦁'}</span>
               <div>
-                <strong style="font-size: 13.5px; color: var(--slate-900);">\${s.handle}</strong>
+                <strong style="font-size: 13.5px; color: var(--slate-900);">\${esc(s.handle)}</strong>
                 <div style="font-size: 11.5px; color: var(--slate-600);">
                   Turns: \${s.totalTurns || 0} • Active: \${new Date(s.lastActive).toLocaleDateString()}
                   \${isBri ? \` • 🏛️ \${yearBadge} (\${s.examBoard || 'CAIE'})\` : (s.pathway ? \` • 🎓 \${s.pathway}\` : '')}
@@ -4435,10 +4646,10 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
               <button type="button" data-sid="\${sid}" onclick="openTeacherSubjectModal(this.dataset.sid)" class="btn-primary" style="background: var(--bg-cream); color: var(--primary); border: 1px solid var(--border-warm); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto; cursor: pointer; font-weight: 600;">
                 📚 Subjects
               </button>
-              <a href="/api/reports/student-summary?studentId=\${sid}&format=print&token=\${tok}" target="_blank" class="btn-primary" style="background: var(--slate-100); color: var(--slate-800); border: 1px solid var(--slate-300); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
+              <a href="javascript:void(0)" data-report-url="/api/reports/student-summary?studentId=\${sid}&format=print" onclick="openSecureTeacherReport(this.dataset.reportUrl, 'print')" class="btn-primary" style="background: var(--slate-100); color: var(--slate-800); border: 1px solid var(--slate-300); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
                 🖨️ Report Card
               </a>
-              <a href="/api/reports/student-summary?studentId=\${sid}&format=csv&token=\${tok}" target="_blank" class="btn-primary" style="background: var(--slate-100); color: var(--slate-800); border: 1px solid var(--slate-300); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
+              <a href="javascript:void(0)" data-report-url="/api/reports/student-summary?studentId=\${sid}&format=csv" onclick="openSecureTeacherReport(this.dataset.reportUrl, 'csv')" class="btn-primary" style="background: var(--slate-100); color: var(--slate-800); border: 1px solid var(--slate-300); text-decoration: none; padding: 4px 10px; font-size: 11.5px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
                 📄 CSV
               </a>
               <span class="badge badge-open">Active</span>
@@ -4511,6 +4722,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
       document.getElementById('viewCreate').style.display = tab === 'create' ? 'block' : 'none';
       document.getElementById('viewRoster').style.display = tab === 'roster' ? 'block' : 'none';
       document.getElementById('viewDirectory').style.display = tab === 'directory' ? 'block' : 'none';
+      if (tab === 'directory') { loadPendingStaff(); loadSafeguarding(); }   // always show the latest requests and alerts
     }
 
     function renderMissionsList(missions) {
@@ -4525,11 +4737,11 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
       container.innerHTML = missions.map(m => \`
         <div class="mission-item-card">
           <div class="mission-header">
-            <span class="mission-title">\${m.title}</span>
+            <span class="mission-title">\${esc(m.title)}</span>
             <span class="badge badge-\${m.hintMode}">\${m.hintMode.toUpperCase()} HINTS</span>
           </div>
           <div style="font-size: 12.5px; color: var(--slate-600); margin-bottom: 8px;">
-            Grade \${m.grade} \${m.stream} • \${m.subject} • \${m.strand}
+            Grade \${esc(m.grade)} \${esc(m.stream)} • \${esc(m.subject)} • \${esc(m.strand)}
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--primary);">
             <span>Submissions: \${m.totalSubmissions}</span>
@@ -4539,10 +4751,10 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
             <button type="button" class="btn-primary" style="padding: 6px 14px; font-size: 12.5px; width: auto;" data-mid="\${m.id}" onclick="inspectProcessTrails(this.dataset.mid)">
               🔍 Inspect Process Trails
             </button>
-            <a href="/api/reports/stream-summary?schoolId=\${activeTeacher ? activeTeacher.schoolId : ''}&grade=\${m.grade}&stream=\${encodeURIComponent(m.stream)}&subject=\${encodeURIComponent(m.subject)}&format=csv&token=\${encodeURIComponent(getTeacherToken())}" target="_blank" class="btn-primary" style="background: var(--slate-700); text-decoration: none; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
+            <a href="javascript:void(0)" data-report-url="/api/reports/stream-summary?schoolId=\${activeTeacher ? activeTeacher.schoolId : ''}&grade=\${m.grade}&stream=\${encodeURIComponent(m.stream)}&subject=\${encodeURIComponent(m.subject)}&format=csv" onclick="openSecureTeacherReport(this.dataset.reportUrl, 'csv')" class="btn-primary" style="background: var(--slate-700); text-decoration: none; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
               📄 Export CSV
             </a>
-            <a href="/api/reports/stream-summary?schoolId=\${activeTeacher ? activeTeacher.schoolId : ''}&grade=\${m.grade}&stream=\${encodeURIComponent(m.stream)}&subject=\${encodeURIComponent(m.subject)}&format=print&token=\${encodeURIComponent(getTeacherToken())}" target="_blank" class="btn-primary" style="background: var(--slate-700); text-decoration: none; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
+            <a href="javascript:void(0)" data-report-url="/api/reports/stream-summary?schoolId=\${activeTeacher ? activeTeacher.schoolId : ''}&grade=\${m.grade}&stream=\${encodeURIComponent(m.stream)}&subject=\${encodeURIComponent(m.subject)}&format=print" onclick="openSecureTeacherReport(this.dataset.reportUrl, 'print')" class="btn-primary" style="background: var(--slate-700); text-decoration: none; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; width: auto;">
               🖨️ Print Report
             </a>
           </div>
@@ -4594,7 +4806,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
                 \${a.notAttemptedStudents.map(na => \`
                   <div style="background: #FFFFFF; border: 1px solid #FCA5A5; border-radius: 8px; padding: 5px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
                     <span>\${na.avatar}</span>
-                    <strong style="color: #7F1D1D;">\${na.handle}</strong>
+                    <strong style="color: #7F1D1D;">\${esc(na.handle)}</strong>
                     <span style="color: #DC2626; font-size: 10.5px;">Pending</span>
                   </div>
                 \`).join('')}
@@ -4611,7 +4823,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
             bodyHtml += \`
               <div style="border: 1px solid var(--slate-200); border-radius: 12px; padding: 14px; background: var(--slate-50);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <strong style="font-size: 14px; color: var(--slate-900);">\${tr.studentHandle}</strong>
+                  <strong style="font-size: 14px; color: var(--slate-900);">\${esc(tr.studentHandle)}</strong>
                   <span class="badge" style="background: #059669; color: #fff;">Overall: \${tr.overallCBE}</span>
                 </div>
                 <div style="font-size: 12px; color: var(--slate-600);">
@@ -4624,7 +4836,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
                       <div style="font-size: 11.5px; color: var(--slate-600); margin-top: 2px;">
                         \${item.attempts.map((att, aIdx) => \`
                           <span style="display: inline-block; margin-right: 8px; color: \${att.correct ? '#059669' : '#DC2626'};">
-                            Attempt \${aIdx + 1}: "\${att.answer}" \${att.correct ? '✓' : '✗'}
+                            Attempt \${aIdx + 1}: "\${esc(att.answer)}" \${att.correct ? '✓' : '✗'}
                           </span>
                         \`).join('')}
                       </div>
@@ -4716,7 +4928,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
           </div>
 
           <label class="form-label">Question Text (Editable)</label>
-          <textarea id="qText_\${idx}" class="form-input" style="height: 70px; margin-bottom: 12px;" onchange="syncItemText(\${idx})">\${item.question}</textarea>
+          <textarea id="qText_\${idx}" class="form-input" style="height: 70px; margin-bottom: 12px;" onchange="syncItemText(\${idx})">\${esc(item.question)}</textarea>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
             <div>
@@ -4938,7 +5150,87 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
       }
     }
 
+    // Safeguarding inbox. All text goes in with textContent, never as HTML.
+    async function loadPendingStaff() {
+      var host = document.getElementById('stList');
+      if (!host) return;
+      try {
+        var res = await fetch('/api/staff/pending', { headers: getAuthHeaders() });
+        var data = await res.json();
+        host.textContent = '';
+        if (!res.ok || !data.success) { host.textContent = 'Could not load requests.'; return; }
+        if (!data.staff.length) { host.textContent = 'No one is waiting.'; return; }
+        data.staff.forEach(function (p) {
+          var row = document.createElement('div');
+          row.style.cssText = 'background:#fff;border:1px solid #BAE6FD;border-radius:12px;padding:10px 12px;margin-top:8px;';
+          var who = document.createElement('div');
+          who.style.cssText = 'font-weight:700;font-size:14px;';
+          who.textContent = p.name + ' (' + String(p.role || '').replace(/_/g, ' ') + ')';
+          row.appendChild(who);
+          var meta = document.createElement('div');
+          meta.style.cssText = 'font-size:12.5px;margin:4px 0;';
+          meta.textContent = [p.email && p.email.indexOf('@teacher.elingu.local') < 0 ? p.email : '', p.phone || '', 'ID ' + p.idNumber].filter(Boolean).join(' · ');
+          row.appendChild(meta);
+          [[true, 'Approve'], [false, 'Decline']].forEach(function (pair) {
+            var b = document.createElement('button');
+            b.type = 'button'; b.textContent = pair[1];
+            b.style.cssText = 'min-height:44px;margin-right:8px;padding:0 16px;border-radius:10px;border:1px solid #0369A1;background:#fff;font-weight:600;cursor:pointer;';
+            b.addEventListener('click', async function () {
+              b.disabled = true;
+              await fetch('/api/staff/decision', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ teacherId: p.id, approve: pair[0] }) });
+              loadPendingStaff();
+            });
+            row.appendChild(b);
+          });
+          host.appendChild(row);
+        });
+      } catch (e) { host.textContent = 'Could not load requests.'; }
+    }
+
+    async function loadSafeguarding() {
+      var host = document.getElementById('sgList');
+      if (!host) return;
+      try {
+        var res = await fetch('/api/school/safeguarding', { headers: getAuthHeaders() });
+        var data = await res.json();
+        host.textContent = '';
+        if (!res.ok || !data.success) { host.textContent = 'Could not load alerts.'; return; }
+        var open = (data.alerts || []).filter(function (a) { return a.status !== 'resolved'; });
+        if (!open.length) { host.textContent = 'No open alerts.'; return; }
+        open.forEach(function (a) {
+          var row = document.createElement('div');
+          row.style.cssText = 'background:#fff;border:1px solid #FED7AA;border-radius:12px;padding:10px 12px;margin-top:8px;';
+          var head = document.createElement('div');
+          head.style.cssText = 'font-weight:700;font-size:14px;';
+          head.textContent = (a.studentHandle || 'Learner') + ' · ' + new Date(a.timestamp).toLocaleString('en-GB') + ' · ' + String(a.status || '').replace(/_/g, ' ');
+          row.appendChild(head);
+          var why = document.createElement('div');
+          why.style.cssText = 'font-size:13px;margin:4px 0;';
+          why.textContent = 'Flagged: ' + (a.category || 'concern') + (a.matchedWord ? ' (' + a.matchedWord + ')' : '');
+          row.appendChild(why);
+          var note = document.createElement('input');
+          note.type = 'text'; note.maxLength = 500; note.placeholder = 'Private note (optional)'; note.setAttribute('aria-label', 'Private note');
+          note.style.cssText = 'width:100%;min-height:40px;margin:4px 0;padding:6px 10px;border:1px solid #CBD5E1;border-radius:8px;';
+          row.appendChild(note);
+          [['in_progress', 'I am looking into this'], ['resolved', 'Mark resolved']].forEach(function (pair) {
+            var b = document.createElement('button');
+            b.type = 'button'; b.textContent = pair[1];
+            b.style.cssText = 'min-height:44px;margin-right:8px;padding:0 14px;border-radius:10px;border:1px solid #9A3412;background:#fff;font-weight:600;cursor:pointer;';
+            b.addEventListener('click', async function () {
+              b.disabled = true;
+              await fetch('/api/school/safeguarding/' + encodeURIComponent(a.id), { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ status: pair[0], note: note.value }) });
+              loadSafeguarding();
+            });
+            row.appendChild(b);
+          });
+          host.appendChild(row);
+        });
+      } catch (e) { host.textContent = 'Could not load alerts.'; }
+    }
+
     async function renderSchoolDirectory() {
+      loadSafeguarding();
+      loadPendingStaff();
       const container = document.getElementById('schoolDirectoryContainer');
       const rosterTable = document.getElementById('facultyRosterTableBody');
       if (!activeSchool) return;
@@ -5012,7 +5304,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
                 }
 
                 const assignmentsHtml = (f.assignments && f.assignments.length > 0)
-                  ? f.assignments.map(as => '<span style="display: inline-block; background: var(--bg-cream); border: 1px solid var(--border-warm); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; margin: 2px;">Grade ' + as.grade + ' ' + as.stream + ' (' + (as.subjects || []).join(', ') + ')</span>').join('')
+                  ? f.assignments.map(as => '<span style="display: inline-block; background: var(--bg-cream); border: 1px solid var(--border-warm); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; margin: 2px;">Grade ' + esc(as.grade) + ' ' + esc(as.stream) + ' (' + esc((as.subjects || []).join(', ')) + ')</span>').join('')
                   : '<span style="color: var(--text-muted); font-size: 12px;">Full School / General</span>';
 
                 let actionsHtml = '';
@@ -5035,10 +5327,10 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
                 }
 
                 return '<tr style="border-bottom: 1px solid var(--border-warm);">' +
-                  '<td style="padding: 10px 12px;"><strong>' + f.name + '</strong><br><span style="font-size: 11.5px; color: var(--text-muted);">ID: ' + (f.idNumber || '---') + '</span></td>' +
+                  '<td style="padding: 10px 12px;"><strong>' + esc(f.name) + '</strong><br><span style="font-size: 11.5px; color: var(--text-muted);">ID: ' + esc(f.idNumber || '---') + '</span></td>' +
                   '<td style="padding: 10px 12px;">' + roleBadge + '</td>' +
                   '<td style="padding: 10px 12px;">' + assignmentsHtml + '</td>' +
-                  '<td style="padding: 10px 12px; font-size: 12px; color: var(--text-sub);">' + (f.phone || '') + '<br>' + (f.email || '') + '</td>' +
+                  '<td style="padding: 10px 12px; font-size: 12px; color: var(--text-sub);">' + esc(f.phone || '') + '<br>' + esc(f.email || '') + '</td>' +
                   '<td style="padding: 10px 12px; text-align: right;">' + actionsHtml + '</td>' +
                   '</tr>';
               }).join('');
@@ -5338,19 +5630,50 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
         '&grade=' + currentSelectedStream.grade +
         '&stream=' + encodeURIComponent(currentSelectedStream.stream) +
         '&format=' + format +
-        '&token=' + encodeURIComponent(getTeacherToken());
-      window.open(url, '_blank');
+        ''; // Token passed via Authorization header in openSecureTeacherReport
+      return openSecureTeacherReport(url, format);
     }
 
     function downloadSchoolAudit(format) {
       if (!activeTeacher || !activeTeacher.schoolId) return alert('No active school detected.');
       const url = '/api/reports/school-summary?schoolId=' + activeTeacher.schoolId +
         '&format=' + format +
-        '&token=' + encodeURIComponent(getTeacherToken());
-      window.open(url, '_blank');
+        ''; // Token passed via Authorization header in openSecureTeacherReport
+      return openSecureTeacherReport(url, format);
     }
 
     // ── TEACHER SUBJECT MANAGEMENT MODAL LOGIC ──
+    async function openSecureTeacherReport(url, format) {
+      const tok = getTeacherToken();
+      if (!tok) { alert('Teacher session expired. Please log in again.'); return; }
+      const win = format === 'print' ? window.open('', '_blank') : null;
+      try {
+        const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + tok } });
+        if (!res.ok) {
+          if (win) win.close();
+          const err = await res.json().catch(() => ({}));
+          alert(err.error || 'Could not load report.');
+          return;
+        }
+        if (format === 'print') {
+          const html = await res.text();
+          if (win) { win.document.open(); win.document.write(html); win.document.close(); }
+        } else {
+          const blob = await res.blob();
+          const disp = res.headers.get('Content-Disposition') || '';
+          const match = disp.match(/filename="?([^";]+)"?/i);
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = match ? match[1] : 'Elingu_Report.csv';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        }
+      } catch (e) {
+        if (win) win.close();
+        alert('Network error loading report: ' + e.message);
+      }
+    }
     // CBE Subjects:
     const TEACHER_JSS_SUBJECTS = ['Mathematics', 'English', 'Kiswahili', 'Integrated Science', 'Science & Technology', 'Social Studies', 'Agriculture', 'Creative Arts'];
     const TEACHER_SS_COMPULSORY = ['Core Mathematics', 'Essential Mathematics', 'Community Service Learning', 'English', 'Kiswahili'];
@@ -5701,9 +6024,12 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
         }
         return;
       }
-      if (errEl) errEl.style.display = 'none';
-      document.getElementById('teacherGooglePromptModal').style.display = 'none';
-      await processTeacherGoogleAuth({ email: email, role: 'teacher' });
+      // SECURITY: an email typed into a box is not proof of identity. Real Google sign-in is required.
+      if (errEl) {
+        errEl.style.display = 'block';
+        errEl.textContent = 'Google sign-in is not available right now. Please sign in with your email and password.';
+      }
+      return;
     }
 
     async function handleTeacherGoogleCallback(response) {

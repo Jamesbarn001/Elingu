@@ -11,7 +11,7 @@ export const options = {
   stages: [
     { duration: '15s', target: 20 },  // Warm up: Ramp to 20 concurrent users
     { duration: '30s', target: 50 },  // Normal load: 50 concurrent learners
-    { duration: '15s', target: 100 }, // Peak rush hour: 100 concurrent learners
+    { duration: '15s', target: 200 }, // Peak rush hour: 100 concurrent learners
     { duration: '15s', target: 0 },   // Cool down
   ],
   // Performance SLO thresholds
@@ -24,7 +24,7 @@ export const options = {
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
 
 export default function () {
-  
+
   // 1. Student App Home & Static Assets
   group('Student App Load', function () {
     const res = http.get(`${BASE_URL}/`);

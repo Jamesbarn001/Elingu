@@ -19,7 +19,7 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const DATA_DIR = path.join(ROOT_DIR, 'data');
+const DATA_DIR = require('../dataDir').DATA_DIR;
 
 const REAL_STUDENT_IDS = new Set([
   'stu_22725e48c6ab', // Kimberly
@@ -49,7 +49,7 @@ async function runPurge() {
       try {
         const { rows } = await pool.query('SELECT data FROM elingu_documents WHERE name = $1', [name]);
         if (rows.length > 0 && rows[0].data) {
-          return rows[0].data;
+          return require('../secureJson').decryptDocument(rows[0].data, name);
         }
       } catch (err) {
         console.warn(`[purge] Could not load ${name} from Postgres:`, err.message);
@@ -57,7 +57,7 @@ async function runPurge() {
     }
     const localPath = path.join(DATA_DIR, name);
     if (fs.existsSync(localPath)) {
-      return JSON.parse(fs.readFileSync(localPath, 'utf8'));
+      return require('../secureJson').readJson(localPath, fallback, 'purge');
     }
     return fallback;
   }
@@ -65,6 +65,7 @@ async function runPurge() {
   // Helper to persist document both locally and to Postgres
   async function saveDoc(name, data) {
     const localPath = path.join(DATA_DIR, name);
+    data = require('../secureJson').encryptDocument(data, name); // keep personal data encrypted at rest
     fs.writeFileSync(localPath, JSON.stringify(data, null, 2), 'utf8');
     console.log(`💾 Saved local data/${name}`);
 

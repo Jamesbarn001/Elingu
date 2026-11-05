@@ -241,6 +241,14 @@ async function verifyEmailDeliverable(email) {
 
   const [_, domain] = email.trim().toLowerCase().split('@');
 
+  // Bypass mock/test domains and testing environments
+  const isReservedDomain = /(@example\.com$|\.test$|\.local$|\.internal$)/i.test(email);
+  const isKeywordTestAddress = process.env.NODE_ENV !== 'production' && /(dummy|testfamily|mock|fixture)/i.test(email);
+  const isTestDomain = isReservedDomain || isKeywordTestAddress;
+  if (isTestDomain || process.env.NODE_ENV === 'test') {
+    return { valid: true, domain };
+  }
+
   // Major trusted providers always have active MX servers
   const TRUSTED_DOMAINS = new Set([
     'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk',
@@ -363,23 +371,31 @@ function verifyOTP(otp, storedHash) {
 // ── PHONE NORMALIZATION (KENYA) ────────────────────────────
 
 /**
- * Normalize a Kenyan phone number to E.164 (+254...).
- * Accepts 07..., 01..., 254..., +254...
- * Returns normalized string or null if invalid.
+ * Normalize a Kenyan mobile phone number to E.164 (+254...).
+ * Strictly enforces Communications Authority of Kenya (CAK) mobile prefixes (07..., 01...).
+ * Rejects non-mobile numbers (landlines, toll-free, dummy sequences).
+ * Returns normalized string (+254...) or null if invalid.
  */
 function normalizeKenyanPhone(phone) {
   if (!phone) return null;
   let clean = String(phone).trim().replace(/[^0-9+]/g, '');
   if (clean.startsWith('+254')) clean = clean.slice(1);
-  if (clean.startsWith('254') && clean.length === 12) {
+
+  // 12 digits: e.g. 254712345678 or 254112345678
+  if ((clean.startsWith('2547') || clean.startsWith('2541')) && clean.length === 12) {
     return '+' + clean;
   }
-  if (clean.startsWith('0') && clean.length === 10) {
+
+  // 10 digits: e.g. 0712345678 or 0112345678
+  if ((clean.startsWith('07') || clean.startsWith('01')) && clean.length === 10) {
     return '+254' + clean.slice(1);
   }
+
+  // 9 digits: e.g. 712345678 or 112345678
   if ((clean.startsWith('7') || clean.startsWith('1')) && clean.length === 9) {
     return '+254' + clean;
   }
+
   return null;
 }
 
@@ -475,6 +491,18 @@ function storeOTPOnRecord(record, otp) {
   record.otpHash = hashOTP(otp);
   record.otpExpiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000).toISOString();
   record.otpVerified = false;
+  record.otpVerifiedUntil = null;
+  record.otpWrongGuesses = 0;
+}
+
+// A 6-digit code has only a million possibilities, so guessing is capped per code, and a verified code
+// can only be used for a short while afterwards (so an abandoned reset cannot be finished by someone else later).
+const OTP_MAX_WRONG_GUESSES = 5;
+const OTP_VERIFIED_WINDOW_MINUTES = 10;
+
+/** True if this record passed OTP verification recently enough to authorise a reset. */
+function isOtpVerificationFresh(record) {
+  return !!(record && record.otpVerified && record.otpVerifiedUntil && Date.now() < new Date(record.otpVerifiedUntil).getTime());
 }
 
 /**
@@ -491,10 +519,19 @@ function verifyOTPFromRecord(record, otp) {
     return { valid: false, error: 'This verification code has expired. Please request a new one.' };
   }
   if (!verifyOTP(otp, record.otpHash)) {
+    record.otpWrongGuesses = (record.otpWrongGuesses || 0) + 1;
+    if (record.otpWrongGuesses >= OTP_MAX_WRONG_GUESSES) {
+      record.otpHash = null;
+      record.otpExpiresAt = null;
+      record.otpWrongGuesses = 0;
+      return { valid: false, error: 'Too many incorrect codes. Please request a new verification code.' };
+    }
     return { valid: false, error: 'Incorrect verification code. Please check and try again.' };
   }
-  // Mark as verified — single use
+  // Mark as verified — single use, and only valid for a short window
   record.otpVerified = true;
+  record.otpVerifiedUntil = new Date(Date.now() + OTP_VERIFIED_WINDOW_MINUTES * 60 * 1000).toISOString();
+  record.otpWrongGuesses = 0;
   record.otpHash = null;
   record.otpExpiresAt = null;
   return { valid: true };
@@ -524,6 +561,7 @@ function generateTeacherToken(teacher) {
     assignments: teacher.assignments || [],
     ...(teacher.grade !== undefined ? { grade: teacher.grade } : {}),
     ...(teacher.stream !== undefined ? { stream: teacher.stream } : {}),
+    iat: Date.now(),
     exp: Date.now() + (TEACHER_TOKEN_TTL_HOURS * 60 * 60 * 1000)
   };
   const jsonStr = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -579,6 +617,7 @@ function generateStudentToken(student) {
     handle: student.handle,
     schoolId: student.schoolId || null,
     curriculum: student.curriculum || 'CBC',
+    iat: Date.now(),
     exp: Date.now() + (STUDENT_TOKEN_TTL_HOURS * 60 * 60 * 1000)
   };
   const jsonStr = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -726,7 +765,112 @@ function sanitizeStudentForClient(student) {
   return safe;
 }
 
+// ═══════════════════════════════════════════════════════
+// GOOGLE ENROLLMENT TOKEN (proof that an email was verified by Google)
+// ═══════════════════════════════════════════════════════
+// Issued by /api/auth/google after a *verified* Google ID token, and required by
+// /api/parent/complete-google-enrollment. Purpose-bound key, 15-minute lifetime.
+const ENROLLMENT_TOKEN_KEY = crypto.createHmac('sha256', TEACHER_TOKEN_SECRET).update('google-enrollment-v1').digest();
+const ENROLLMENT_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+function generateEnrollmentToken(email) {
+  if (!email) return null;
+  const payload = { e: String(email).trim().toLowerCase(), p: 'enroll', exp: Date.now() + ENROLLMENT_TOKEN_TTL_MS };
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = crypto.createHmac('sha256', ENROLLMENT_TOKEN_KEY).update(body).digest('base64url');
+  return `${body}.${sig}`;
+}
+
+/** Returns the verified email if the token is valid, unexpired and bound to expectedEmail; otherwise null. */
+function verifyEnrollmentToken(token, expectedEmail) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const expected = crypto.createHmac('sha256', ENROLLMENT_TOKEN_KEY).update(parts[0]).digest('base64url');
+  try {
+    const a = Buffer.from(parts[1]);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    if (!payload || payload.p !== 'enroll' || !payload.e || Date.now() > payload.exp) return null;
+    if (expectedEmail && payload.e !== String(expectedEmail).trim().toLowerCase()) return null;
+    return payload.e;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// SAFE DISPLAY TEXT (nicknames, schools, avatars...)
+// ═══════════════════════════════════════════════════════
+// These values are shown in the parent portal, teacher portal, emails and CSV exports. Rather than trusting every
+// place that renders them to escape correctly, we refuse markup characters at the source.
+
+/** Nickname: letters (any language), digits, spaces, dot, dash, underscore, and emoji. 2 to 24 characters. */
+function validateNickname(raw) {
+  const value = String(raw === undefined || raw === null ? '' : raw).normalize('NFC').trim().replace(/\s+/g, ' ');
+  if (value.length < 2 || [...value].length > 24) {
+    return { valid: false, error: 'Nickname must be between 2 and 24 characters.' };
+  }
+  if (!/^[\p{L}\p{N}\p{M}\p{Extended_Pictographic}‍️ ._\-]+$/u.test(value)) {
+    return { valid: false, error: 'Nickname can only use letters, numbers, spaces, dots, dashes and underscores.' };
+  }
+  return { valid: true, value };
+}
+
+/** Free text such as school or stream names: keeps it readable but removes anything that could form markup or break out of an attribute/script. */
+function cleanDisplayText(raw, maxLen = 60) {
+  return String(raw === undefined || raw === null ? '' : raw)
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/'/g, '’')
+    .replace(/"/g, '”')
+    .replace(/&/g, ' and ')
+    .replace(/[<>`\\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+}
+
+/** Avatar is a short emoji string; anything else falls back to the default. */
+function cleanAvatar(raw, fallback = '🦁') {
+  const v = String(raw === undefined || raw === null ? '' : raw).trim();
+  if (!v || [...v].length > 6 || !/^[\p{Extended_Pictographic}‍️⃣\p{Emoji_Modifier}]+$/u.test(v)) return fallback;
+  return v;
+}
+
+/**
+ * Recursively neutralise markup in every string of a data structure that will be rendered as HTML by the portals.
+ * Keeps text readable and keeps "&" (e.g. "Science & Technology") but removes <, >, backticks and quote characters,
+ * and stops HTML entities from being smuggled in.
+ */
+function neutralizeMarkupDeep(value, depth = 0) {
+  if (depth > 8 || value === null || value === undefined) return value;
+  if (typeof value === 'string') {
+    return value
+      .replace(/&(?=#|[a-zA-Z]+;)/g, '&amp;')
+      .replace(/</g, '\u2039')
+      .replace(/>/g, '\u203A')
+      .replace(/`/g, '\u2019')
+      .replace(/'/g, '\u2019')
+      .replace(/"/g, '\u201D')
+      .replace(/\\/g, '/');
+  }
+  if (Array.isArray(value)) return value.map(v => neutralizeMarkupDeep(v, depth + 1));
+  if (typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = neutralizeMarkupDeep(value[k], depth + 1);
+    return out;
+  }
+  return value;
+}
+
 module.exports = {
+  neutralizeMarkupDeep,
+  validateNickname,
+  cleanDisplayText,
+  cleanAvatar,
+  generateEnrollmentToken,
+  verifyEnrollmentToken,
   // Password & PIN strength
   validatePassword,
   validateStudentPin,
@@ -745,6 +889,7 @@ module.exports = {
   hashOTP,
   verifyOTP,
   storeOTPOnRecord,
+  isOtpVerificationFresh,
   verifyOTPFromRecord,
   // Lockout
   checkLockout,

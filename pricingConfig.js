@@ -24,6 +24,7 @@ const PRICING_TIERS = {
       maxSubjects: 3,
       virtualLab: false,
       dailyTurns: 15,
+      dailySavedSpaces: 1,
       contextTurns: 20,
       teacherReport: false,
       knowYourChild: false,
@@ -60,6 +61,7 @@ const PRICING_TIERS = {
       virtualLab: true,
       maxSubjects: null,
       dailyTurns: 300,
+      dailySavedSpaces: 5,
       contextTurns: 20,
       teacherReport: 'basic',
       knowYourChild: false,
@@ -97,6 +99,7 @@ const PRICING_TIERS = {
       virtualLab: true,
       maxSubjects: null,
       dailyTurns: 500,
+      dailySavedSpaces: Infinity,
       contextTurns: 30,
       teacherReport: 'rich_sba',
       knowYourChild: true,
@@ -271,6 +274,7 @@ const PRICING_TIERS = {
     limits: {
       maxSubjects: null, // Unlimited CBE subjects for pilot trial
       dailyTurns: 150,
+      dailySavedSpaces: 5,
       contextTurns: 20,
       teacherReport: 'basic',
       knowYourChild: false,
@@ -736,7 +740,273 @@ function getMaxSubjectsForTier(tier = 'free') {
   return Infinity;
 }
 
+// ════════════════════════════════════════════════════════════
+// R2 AUTHORITATIVE PLAN CATALOGUE & LIFECYCLE (MILESTONE 2)
+// Approved School-Calendar Packaging, VAT & Reminder Engine
+// ════════════════════════════════════════════════════════════
+
+// 1. British Curriculum Plan Catalogue (Checkpoint Years 7–9 & IGCSE Years 10–11)
+const BRITISH_CATALOGUE = {
+  trial: {
+    days: 7,
+    price: 0,
+    currency: 'KES',
+    name: '7-Day Free Trial',
+    description: 'Full access to Cambridge Checkpoint & IGCSE with no payment details required'
+  },
+  monthly: {
+    price: 3500,
+    priceUsd: 29,
+    currencyDisplay: "KES 3,500 / $29",
+    currency: 'KES',
+    days: 30,
+    name: 'British Monthly',
+    description: 'Full monthly access to Checkpoint and IGCSE'
+  },
+  termly: {
+    price: 8900,
+    priceUsd: 69,
+    currencyDisplay: "KES 8,900 / $69",
+    currency: 'KES',
+    days: 105,
+    recommended: true,
+    name: 'British Termly',
+    badge: 'Most Popular / Recommended',
+    description: 'Prepaid termly access (105 days, approx 15 weeks)'
+  },
+    annual: {
+    price: 24500,
+    priceUsd: 189,
+    currencyDisplay: "KES 24,500 / $189",
+    currency: 'KES',
+    days: 365,
+    name: 'British Annual',
+    badge: 'Best Value',
+    description: 'Full academic year access (365 days)'
+  },
+  examSeasonPass: {
+    price: 12900,
+    priceUsd: 99,
+    currencyDisplay: "KES 12,900 / $99",
+    currency: 'KES',
+    days: 181,
+    name: 'Exam Season Pass',
+    description: 'Jan 1 to end of May/June series'
+  }
+};
+// Aliases for compatibility
+BRITISH_CATALOGUE.exam_season_pass = BRITISH_CATALOGUE.examSeasonPass;
+BRITISH_CATALOGUE.exam_pass = BRITISH_CATALOGUE.examSeasonPass;
+BRITISH_CATALOGUE.priceMonthly = 3500;
+BRITISH_CATALOGUE.priceTermly = 8900;
+BRITISH_CATALOGUE.priceAnnual = 24500;
+BRITISH_CATALOGUE.priceExamSeason = 12900;
+BRITISH_CATALOGUE.trialDays = 7;
+const BRITISH_PRICING = BRITISH_CATALOGUE;
+
+// 2. CBC / CBE Curriculum Plan Catalogue (Grades 6–12)
+const CBC_CATALOGUE = {
+  monthly: {
+    price: 499,
+    priceUsd: 5,
+    currencyDisplay: "KES 499 / $5",
+    currency: 'KES',
+    days: 30,
+    name: 'CBC Monthly',
+    description: 'Full monthly access to CBC JSS & Senior School'
+  },
+  termly: {
+    price: 1199,
+    priceUsd: 10,
+    currencyDisplay: "KES 1,199 / price: 1199,0",
+    currency: 'KES',
+    days: 105,
+    recommended: true,
+    name: 'CBC Termly',
+    badge: 'Recommended',
+    description: 'Prepaid termly access (105 days, approx 15 weeks)'
+  },
+  annual: {
+    price: 3499,
+    priceUsd: 29,
+    currencyDisplay: "KES 3,499 / $29",
+    currency: 'KES',
+    days: 365,
+    name: 'CBC Annual',
+    badge: 'Best Value',
+    description: 'Full academic year access (365 days)'
+  },
+  bootcampPass: {
+    price: 499,
+    currency: 'KES',
+    days: 21,
+    name: 'Holiday Bootcamp Pass',
+    description: '3 weeks intensive revision (April, August, Nov–Dec holidays)'
+  }
+};
+// Aliases for compatibility
+CBC_CATALOGUE.holidayBootcampPass = CBC_CATALOGUE.bootcampPass;
+CBC_CATALOGUE.bootcamp = CBC_CATALOGUE.bootcampPass;
+CBC_CATALOGUE.priceMonthly = 499;
+CBC_CATALOGUE.priceTermly = 1199;
+CBC_CATALOGUE.priceAnnual = 3499;
+CBC_CATALOGUE.priceBootcamp = 499;
+const CBC_PRICING = CBC_CATALOGUE;
+
+// 3. B2B Institutional School Pricing
+const B2B_PRICING = {
+  britishPilotPrice: 0,
+  cbcLabLicenceTier1: 45000,
+  cbcLabLicenceTier2: 75000,
+  feeSlipLevy: 600,
+  schoolRebate: 100,
+  descriptions: {
+    britishPilot: '1-term British pilot trial (KES 0)',
+    cbcLabLicenceTier1: 'CBC school lab licence Tier 1 (up to 500 pupils) — KES 45,000/term',
+    cbcLabLicenceTier2: 'CBC school lab licence Tier 2 (500+ pupils) — KES 75,000/term',
+    feeSlipLevy: 'B2B2C fee-slip levy: KES 600 per pupil per term',
+    schoolRebate: 'School rebate: KES 100 per pupil per term returned to school'
+  }
+};
+
+// 4. Goldilocks 3-Option Presentation
+const GOLDILOCKS_PRESENTATION = {
+  british: [
+    { period: 'monthly', price: 3500, currency: 'KES', recommended: false, name: 'Monthly', billingCycle: 'monthly', badge: null },
+    { period: 'termly', price: 8900, currency: 'KES', recommended: true, badge: 'Most Popular / Recommended', name: 'Termly', billingCycle: 'termly' },
+    { period: 'annual', price: 24500, currency: 'KES', recommended: false, badge: 'Best Value', name: 'Annual', billingCycle: 'annual' }
+  ],
+  cbc: [
+    { period: 'monthly', price: 499, currency: 'KES', recommended: false, name: 'Monthly', billingCycle: 'monthly', badge: null },
+    { period: 'termly', price: 1199, currency: 'KES', recommended: true, badge: 'Recommended', name: 'Termly', billingCycle: 'termly' },
+    { period: 'annual', price: 3499, currency: 'KES', recommended: false, badge: 'Best Value', name: 'Annual', billingCycle: 'annual' }
+  ]
+};
+
+// 5. VAT Breakdown Calculation (16% Kenya VAT, VAT-inclusive pricing)
+function calculateVatBreakdown(grossAmount) {
+  const grossTotal = Number(grossAmount) || 0;
+  const netBase = Math.round((grossTotal / 1.16) * 100) / 100;
+  const vatAmount = Math.round((grossTotal - netBase) * 100) / 100;
+  return {
+    grossTotal,
+    netBase,
+    vatAmount,
+    vatRate: 0.16,
+    isInclusive: true
+  };
+}
+
+// 6. Subscription Lifecycle & 3-Day Grace Period Engine
+function calculateSubscriptionLifecycle({ startDate = new Date(), planPeriod = 'termly', curriculum = 'CBC' } = {}) {
+  const startsAt = startDate instanceof Date ? new Date(startDate.getTime()) : new Date(startDate);
+  const normPeriod = String(planPeriod || 'termly').toLowerCase().trim();
+
+  let days = 105; // Standard termly (15 weeks)
+  if (normPeriod === 'monthly' || normPeriod === 'month') {
+    days = 30;
+  } else if (normPeriod === 'termly' || normPeriod === 'term') {
+    days = 105;
+  } else if (normPeriod === 'annual' || normPeriod === 'yearly' || normPeriod === 'year') {
+    days = 365;
+  } else if (normPeriod === 'trial' || normPeriod === 'free_trial' || normPeriod === 'trial_7d') {
+    days = 7;
+  } else if (
+    normPeriod === 'bootcamp' ||
+    normPeriod === 'bootcamppass' ||
+    normPeriod === 'holidaybootcamppass' ||
+    normPeriod === 'holiday_bootcamp' ||
+    normPeriod === 'holiday_bootcamp_pass'
+  ) {
+    days = 21;
+  } else if (
+    normPeriod === 'examseasonpass' ||
+    normPeriod === 'exam_season_pass' ||
+    normPeriod === 'exam_pass'
+  ) {
+    days = 181;
+  }
+
+  const expiresAt = new Date(startsAt.getTime() + days * 24 * 60 * 60 * 1000);
+  const gracePeriodEndsAt = new Date(expiresAt.getTime() + 3 * 24 * 60 * 60 * 1000); // exactly 3 days after expiry
+
+  return {
+    startsAt,
+    expiresAt,
+    gracePeriodEndsAt,
+    durationDays: days,
+    graceDays: 3
+  };
+}
+
+// 7. Automated Renewal Reminder Schedule (4 stages)
+function getReminderSchedule(expiresAt) {
+  const expiryDate = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  const expiryMs = expiryDate.getTime();
+  const ONE_DAY_MS = 86400000;
+
+  return [
+    { stage: '7d_before', sendAt: new Date(expiryMs - 7 * ONE_DAY_MS).toISOString() },
+    { stage: '3d_before', sendAt: new Date(expiryMs - 3 * ONE_DAY_MS).toISOString() },
+    { stage: '1d_before', sendAt: new Date(expiryMs - 1 * ONE_DAY_MS).toISOString() },
+    { stage: '1d_grace',  sendAt: new Date(expiryMs + 1 * ONE_DAY_MS).toISOString() }
+  ];
+}
+
+// 8. Family Pricing Proposal
+const FAMILY_PRICING_PROPOSAL = {
+  recommendedModel: 'Model B (Flat Multi-Child Bundle)',
+  options: [
+    {
+      model: 'A',
+      name: 'Add-on (+50% per extra child)',
+      cbcTermly: 1798,
+      britishTermly: 13350,
+      description: 'Primary learner pays full price; additional siblings receive a 50% discount per term.'
+    },
+    {
+      model: 'B',
+      name: 'Flat Multi-Child Bundle',
+      cbcTermly: 1999,
+      britishTermly: 14900,
+      recommended: true,
+      description: 'Single flat rate covering up to 3 siblings under one household with full access.'
+    },
+    {
+      model: 'C',
+      name: 'Graduated Sibling Tier',
+      cbcTermly: 2199,
+      britishTermly: 16500,
+      description: 'Tiered multi-child subscription with declining marginal cost for 2nd and 3rd children.'
+    }
+  ],
+  rationale: 'Matches Kenyan parent mental model for sibling school discounts while preventing separate sku churn'
+};
+
+
+/**
+ * Returns the maximum number of spaces a student can save per day based on tier:
+ * - Free: 1 space/day
+ * - Standard: 5 spaces/day
+ * - Pilot / School: 5 spaces/day
+ * - Premium: Infinity (unlimited)
+ */
+function getDailySavedSpacesLimitForTier(tier = 'free') {
+  const clean = String(tier || 'free').toLowerCase();
+  if (clean === 'free') return 1;
+  if (clean === 'standard') return 5;
+  if (clean === 'pilot') return 5;
+  if (clean === 'school' || clean === 'igcse_school') return 5;
+  return Infinity;
+}
+
+
+// Supported currencies across local and international payment gateways
+const SUPPORTED_CURRENCIES = ['KES', 'USD'];
+
 module.exports = {
+  SUPPORTED_CURRENCIES,
+  getDailySavedSpacesLimitForTier,
   PRICING_TIERS,
   RATE_CARDS,
   FAMILY_BUNDLES,
@@ -752,5 +1022,18 @@ module.exports = {
   ADDITIONAL_CHILD_ADDON,
   FEATURE_NAMING,
   getKnowYourChildGate,
-  pilotConfig: require('./pilotConfig')
+  pilotConfig: require('./pilotConfig'),
+
+  // Milestone 2 R2 Exports
+  BRITISH_CATALOGUE,
+  BRITISH_PRICING,
+  CBC_CATALOGUE,
+  CBC_PRICING,
+  B2B_PRICING,
+  GOLDILOCKS_PRESENTATION,
+  calculateVatBreakdown,
+  calculateSubscriptionLifecycle,
+  getReminderSchedule,
+  FAMILY_PRICING_PROPOSAL
 };
+

@@ -10,7 +10,7 @@ const path = require('path');
 const db = require('./index');
 
 function resetData() {
-  const dataDir = path.resolve(__dirname, '../data');
+  const dataDir = require('../dataDir').DATA_DIR;
   const backupDir = path.join(dataDir, 'backups', `backup_${Date.now()}`);
 
   console.log('\n🧹 Starting Elingu Clean-Slate Reset...');

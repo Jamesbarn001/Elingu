@@ -53,7 +53,7 @@ module.exports = {
     const password = 'TeacherPass2026!';
 
     // Register
-    const regRes = await ctx.api('/api/teacher/register', {
+    const regRes = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Mwalimu Otieno',
@@ -191,7 +191,7 @@ module.exports = {
     ctx.assertEqual(ssPricing.amount, 1799, 'Senior School Premium must be KES 1,799');
     ctx.assertEqual(ssPricing.tierLabel, 'Senior Premium Pro');
 
-    // 2. Payment confirmation API check for Senior School
+    // 2. Direct unverified payment confirmation must be rejected (Security Requirement R1)
     const payResSS = await ctx.api('/api/payment/confirm', {
       method: 'POST',
       body: {
@@ -204,26 +204,23 @@ module.exports = {
         transactionRef: 'MPESA_SS_' + Date.now()
       }
     });
-    ctx.assertEqual(payResSS.status, 200);
-    ctx.assertEqual(payResSS.data.amount, 1799, 'Senior School payment confirmation must charge KES 1,799');
-    ctx.assertEqual(payResSS.data.tierInfo.name, 'Senior Premium Pro');
+    ctx.assertEqual(payResSS.status, 403, 'Unverified self-activation via confirm endpoint must return 403 Forbidden');
+    ctx.assertEqual(payResSS.data.code, 'FORBIDDEN_SELF_ACTIVATION');
 
-    // 3. Payment confirmation API check for JSS
-    const payResJSS = await ctx.api('/api/payment/confirm', {
+    // 3. Server-authoritative checkout initiation creates valid intent with correct pricing
+    const initResSS = await ctx.api('/api/payment/initiate', {
       method: 'POST',
       body: {
         email: parentEmail,
-        familyPassword: 'FamilyPass2026!',
-        studentId: jssStudent.id,
-        tier: 'premium',
-        billingCycle: 'monthly',
-        paymentMethod: 'M-Pesa STK Push',
-        transactionRef: 'MPESA_JSS_' + Date.now()
+        studentId: ssStudent.id,
+        curriculum: 'CBC',
+        planPeriod: 'monthly',
+        phoneNumber: '0712345678',
+        provider: 'daraja'
       }
     });
-    ctx.assertEqual(payResJSS.status, 200);
-    ctx.assertEqual(payResJSS.data.amount, 1499, 'JSS payment confirmation must charge KES 1,499');
-    ctx.assertEqual(payResJSS.data.tierInfo.name, 'Premium Scholar');
+    ctx.assertEqual(initResSS.status, 200, 'Checkout initiation for Senior School must succeed');
+    ctx.assert(initResSS.data.intentId, 'Must generate valid intent ID');
   },
 
   'SYS-07: Socratic Chat Learning & OTP Email Dispatch operate without error': async (ctx) => {

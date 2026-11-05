@@ -10,30 +10,24 @@ const crypto = require('crypto');
 const authUtils = require('./authUtils');
 const pricingConfig = require('./pricingConfig');
 const pilotConfig = require('./pilotConfig');
+const paymentStore = require('./paymentStore');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const { DATA_DIR } = require('./dataDir');
 const PARENTS_FILE = path.join(DATA_DIR, 'parents.json');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// All reads/writes of data/*.json go through secureJson: personal-data fields are encrypted at rest
+// (see cryptoVault.js) and decrypted again on read, so the rest of this file works with plain values.
 function loadJson(filePath, defaultValue = {}) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error(`[parentStore] Error loading ${filePath}:`, err.message);
-  }
-  return defaultValue;
+  return require('./secureJson').readJson(filePath, defaultValue, 'parentStore');
 }
 
 function saveJson(filePath, data) {
   try {
-    authUtils.atomicWriteJsonSync(filePath, data);
-    require('./persistentStore').persist(filePath, data);
+    require('./secureJson').writeJson(filePath, data, 'parentStore');
   } catch (err) {
     console.error(`[parentStore] Error saving ${filePath}:`, err.message);
   }
@@ -186,6 +180,45 @@ function createParent(emailOrPhone, optionalPhone, optionalName) {
   return newParent;
 }
 
+/**
+ * The activation link a parent was sent lasts 24 hours. When a family asks for it again we must hand out a working
+ * token, not the old expired one. Returns the (possibly new) token for an unverified parent.
+ */
+function ensureFreshVerifyToken(parentOrIdentifier) {
+  const identifier = typeof parentOrIdentifier === 'object' && parentOrIdentifier ? (parentOrIdentifier.email || parentOrIdentifier.phone) : parentOrIdentifier;
+  const store = loadJson(PARENTS_FILE, { parents: [] });
+  const parent = findParentInStore(store, identifier);
+  if (!parent) return null;
+  if (parent.verified) return parent.verifyToken || null;
+  const expired = !parent.tokenExpiresAt || new Date(parent.tokenExpiresAt).getTime() < Date.now();
+  if (!parent.verifyToken || expired) {
+    parent.verifyToken = generateVerifyToken();
+    parent.tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    saveJson(PARENTS_FILE, store);
+  }
+  return parent.verifyToken;
+}
+
+/**
+ * Data minimisation (DPA s.25(d), s.39): a contact someone typed in but who never confirmed has not agreed to anything,
+ * so their email/phone must not be kept. Removes unverified parents whose link expired more than a day ago and who have
+ * no linked or pending learners left. Returns the number removed.
+ */
+function purgeExpiredUnverifiedParents(studentExists = () => false) {
+  const store = loadJson(PARENTS_FILE, { parents: [] });
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const before = store.parents.length;
+  store.parents = store.parents.filter(p => {
+    if (p.verified) return true;
+    const tokenExpired = !p.tokenExpiresAt || new Date(p.tokenExpiresAt).getTime() < cutoff;
+    const hasLiveChild = [...(p.children || []), ...((p.pendingChildren || []).map(c => c.studentId))].some(id => studentExists(id));
+    return !(tokenExpired && !hasLiveChild);
+  });
+  const removed = before - store.parents.length;
+  if (removed > 0) saveJson(PARENTS_FILE, store);
+  return removed;
+}
+
 function addPendingChild(parentEmail, studentId, handle) {
   const cleanEmail = (parentEmail || '').trim().toLowerCase();
   const store = loadJson(PARENTS_FILE, { parents: [] });
@@ -308,6 +341,7 @@ async function approveChildWithPin(parentEmail, familyPassword, studentId) {
     parent.studentSubscriptions[studentId] = {
       tier: parent.subscriptionTier,
       billingCycle: parent.billingCycle || 'monthly',
+      paidUntil: parent.paidUntil || null,   // a child added later shares the family plan's end date
       updatedAt: new Date().toISOString()
     };
 
@@ -317,6 +351,7 @@ async function approveChildWithPin(parentEmail, familyPassword, studentId) {
     const student = sStore.students.find(s => s.id === studentId);
     if (student) {
       student.subscriptionTier = parent.subscriptionTier;
+      student.paidUntil = parent.paidUntil || null;
       student.tierUpdatedAt = new Date().toISOString();
       saveJson(studentsFile, sStore);
     }
@@ -326,6 +361,11 @@ async function approveChildWithPin(parentEmail, familyPassword, studentId) {
   saveJson(PARENTS_FILE, store);
 
   return { success: true };
+}
+
+/** All parent records, decrypted. Use this instead of reading data/parents.json directly. */
+function getAllParents() {
+  return loadJson(PARENTS_FILE, { parents: [] }).parents || [];
 }
 
 function findParentInStore(store, identifier) {
@@ -426,13 +466,14 @@ async function resetFamilyPassword(emailOrPhone, newPassword) {
   if (!parent) return { success: false, error: 'No parent account found.' };
 
   // Require OTP verification first
-  if (!parent.otpVerified) {
+  if (!authUtils.isOtpVerificationFresh(parent)) {
     return { success: false, error: 'Please verify your identity with a verification code first.' };
   }
 
   parent.familyPinHash = await authUtils.hashCredential(cleanPassword);
   parent.verified = true;
   parent.otpVerified = false; // Consume the OTP verification
+  parent.otpVerifiedUntil = null;
   parent.lastActive = new Date().toISOString();
   authUtils.clearFailedAttempts(parent); // Unlock if locked
   saveJson(PARENTS_FILE, store);
@@ -477,7 +518,7 @@ async function changeFamilyPassword(emailOrPhone, oldPassword, newPassword, otp)
   }
 
   // 3. Strictly verify 2FA OTP
-  if (!otp && !parent.otpVerified) {
+  if (!otp && !authUtils.isOtpVerificationFresh(parent)) {
     return { success: false, error: 'Security verification required: please enter the 6-digit verification code.' };
   }
 
@@ -492,6 +533,7 @@ async function changeFamilyPassword(emailOrPhone, oldPassword, newPassword, otp)
   // 4. Update password & clear security flags
   parent.familyPinHash = await authUtils.hashCredential(cleanNewPassword);
   parent.otpVerified = false; // Consume 2FA verification
+  parent.otpVerifiedUntil = null;
   parent.otpHash = null;
   parent.otpExpiresAt = null;
   authUtils.clearFailedAttempts(parent);
@@ -519,27 +561,77 @@ async function resetChildPin(emailOrPhone, childId, newPin) {
   if (!student) return { success: false, error: 'Child account not found.' };
 
   student.pinHash = await authUtils.hashCredential(String(newPin).trim());
+  student.tokensValidAfter = Date.now(); // a PIN reset signs the learner out everywhere
   authUtils.clearFailedAttempts(student); // Unlock child if locked
   saveJson(studentsFile, studentStore);
   return { success: true, message: `PIN for ${student.handle} has been reset.` };
 }
 
-function updateParentSubscription(parentEmailOrPhone, tier, billingCycle = 'monthly') {
+function updateParentProfile(emailOrPhone, updates = {}) {
+  const store = loadJson(PARENTS_FILE, { parents: [] });
+  const parent = findParentInStore(store, emailOrPhone);
+  if (!parent) return { success: false, error: 'Parent not found' };
+
+  if (updates.name !== undefined) parent.name = String(updates.name).trim();
+  if (updates.username !== undefined) parent.username = String(updates.username).trim();
+  if (updates.phone !== undefined) parent.phone = String(updates.phone).trim();
+  if (updates.notifications !== undefined) parent.notifications = updates.notifications;
+  parent.updatedAt = new Date().toISOString();
+
+  saveJson(PARENTS_FILE, store);
+  return { success: true, parent };
+}
+
+/**
+ * When a verified payment arrives, access runs for one period from the later of "now" and the current end date,
+ * so paying early never wastes days. A plan that was set without a payment (older accounts) has no end date and keeps working.
+ */
+function nextPaidUntil(existingIso, billingCycle) {
+  const now = new Date();
+  const base = existingIso && new Date(existingIso) > now ? new Date(existingIso) : now;
+  return pricingConfig.calculateSubscriptionLifecycle({ startDate: base, planPeriod: billingCycle }).expiresAt.toISOString();
+}
+const isPaidTier = (t) => t === 'standard' || t === 'premium';
+
+function updateParentSubscription(parentEmailOrPhone, tier, billingCycle = 'monthly', options = {}) {
   const store = loadJson(PARENTS_FILE, { parents: [] });
   const parent = findParentInStore(store, parentEmailOrPhone);
 
   if (!parent) return { success: false, error: 'Parent account not found.' };
-  if (!pricingConfig.PRICING_TIERS[tier]) {
-    return { success: false, error: `Invalid subscription tier: ${tier}` };
-  }
 
-  parent.subscriptionTier = tier;
+  // Normalize tier name (e.g. 'termly' or 'annual' -> 'premium')
+  const normTier = pricingConfig.PRICING_TIERS[tier] ? tier : (['termly', 'annual', 'exam_pass', 'bootcamp'].includes(tier) ? 'premium' : 'standard');
+
+  parent.subscriptionTier = normTier;
   parent.billingCycle = billingCycle;
+  if (!isPaidTier(normTier)) parent.paidUntil = null;
+  else if (options && (options.receipt || options.verifiedPayment)) parent.paidUntil = nextPaidUntil(parent.paidUntil, billingCycle);
   parent.tierUpdatedAt = new Date().toISOString();
   parent.lastActive = new Date().toISOString();
+  if (options && options.receipt) {
+    parent.paymentReceipt = options.receipt;
+    parent.paymentIntentId = options.intentId || null;
+    paymentStore.markReceiptConsumed(options.receipt, {
+      email: parent.email,
+      tier,
+      billingCycle,
+      type: 'parent'
+    });
+  }
 
   saveJson(PARENTS_FILE, store);
   return { success: true, parent };
+}
+
+/** Turn one kind of email on or off for a parent (kind: 'weeklyDigest'). */
+function setEmailPref(parentId, kind, on) {
+  if (!['weeklyDigest', 'reminders'].includes(kind)) return { success: false, error: 'Unknown email type.' };
+  const store = loadJson(PARENTS_FILE, { parents: [] });
+  const parent = store.parents.find(p => p.id === parentId);
+  if (!parent) return { success: false, error: 'Parent account not found.' };
+  parent.emailPrefs = Object.assign({}, parent.emailPrefs, { [kind]: !!on });
+  saveJson(PARENTS_FILE, store);
+  return { success: true };
 }
 
 function activateParentPilot(parentEmailOrPhone, accessCode) {
@@ -551,6 +643,11 @@ function activateParentPilot(parentEmailOrPhone, accessCode) {
   const store = loadJson(PARENTS_FILE, { parents: [] });
   const parent = findParentInStore(store, parentEmailOrPhone);
   if (!parent) return { success: false, error: 'Parent account not found.' };
+
+  // A code can be used once per account: re-entering it after it ran out must not hand out another free period.
+  if (parent.pilotCode && String(parent.pilotCode).toUpperCase() === pilotRes.code) {
+    return { success: false, error: 'This pilot code has already been used on this account.' };
+  }
 
   parent.subscriptionTier = 'pilot';
   parent.pilotCode = pilotRes.code;
@@ -570,27 +667,55 @@ function activateParentPilot(parentEmailOrPhone, accessCode) {
   };
 }
 
-function setChildSubscription(parentEmailOrPhone, studentId, tier, billingCycle = 'monthly') {
+function setChildSubscription(parentEmailOrPhone, studentId, tier, billingCycle = 'monthly', options = {}) {
   const store = loadJson(PARENTS_FILE, { parents: [] });
   const parent = findParentInStore(store, parentEmailOrPhone);
   if (!parent) return { success: false, error: 'Parent account not found.' };
-  if (!parent.children || !parent.children.includes(studentId)) {
-    return { success: false, error: 'Child not linked to this family account.' };
+
+  // Ensure child is linked to parent if payment is verified
+  parent.children = parent.children || [];
+  if (!parent.children.includes(studentId)) {
+    if (options && (options.verifiedPayment || options.receipt)) {
+      parent.children.push(studentId);
+    } else {
+      return { success: false, error: 'Child not linked to this family account.' };
+    }
   }
 
   parent.studentSubscriptions = parent.studentSubscriptions || {};
+  const prevChild = parent.studentSubscriptions[studentId];
+  const verifiedPay = Boolean(options?.verifiedPayment || options?.receipt);
+  const childPaidUntil = !isPaidTier(tier) ? null : (verifiedPay ? nextPaidUntil(prevChild && prevChild.paidUntil, billingCycle) : (prevChild ? prevChild.paidUntil || null : null));
   parent.studentSubscriptions[studentId] = {
     tier: tier || 'free',
     billingCycle,
+    paidUntil: childPaidUntil,
+    paymentReceipt: options?.receipt || null,
+    paymentIntentId: options?.intentId || null,
+    verifiedPayment: verifiedPay,
     updatedAt: new Date().toISOString()
   };
-  saveJson(PARENTS_FILE, store);
+
+  // Keep parent.childrenSubscriptions synchronized atomically for direct property checks
+  parent.childrenSubscriptions = parent.childrenSubscriptions || {};
+  parent.childrenSubscriptions[studentId] = tier || 'free';
+
+  if (options && options.receipt) {
+    paymentStore.markReceiptConsumed(options.receipt, {
+      email: parent.email,
+      studentId,
+      tier,
+      billingCycle,
+      type: 'child'
+    });
+  }
 
   const studentsFile = path.join(DATA_DIR, 'students.json');
   const sStore = loadJson(studentsFile, { students: [] });
   const student = sStore.students.find(s => s.id === studentId);
   if (student) {
     student.subscriptionTier = tier || 'free';
+    student.paidUntil = childPaidUntil;
     student.tierUpdatedAt = new Date().toISOString();
 
     // Auto-enroll pending requested subject on upgrade to Standard or Premium
@@ -629,7 +754,7 @@ function isBritishLearner(student) {
          brd === 'CAIE' || brd === 'EDEXCEL';
 }
 
-function setCurriculumFamilySubscription(parentEmailOrPhone, curriculumFamily, tier = 'premium', billingCycle = 'monthly') {
+function setCurriculumFamilySubscription(parentEmailOrPhone, curriculumFamily, tier = 'premium', billingCycle = 'monthly', options = {}) {
   const store = loadJson(PARENTS_FILE, { parents: [] });
   const parent = findParentInStore(store, parentEmailOrPhone);
   if (!parent) return { success: false, error: 'Parent account not found.' };
@@ -651,14 +776,23 @@ function setCurriculumFamilySubscription(parentEmailOrPhone, curriculumFamily, t
   const eligibleStudents = matchingStudents.slice(0, 3);
 
   parent.studentSubscriptions = parent.studentSubscriptions || {};
+  parent.childrenSubscriptions = parent.childrenSubscriptions || {};
   eligibleStudents.forEach(st => {
+    const prevBundle = parent.studentSubscriptions[st.id];
+    const bundlePaidUntil = (options?.verifiedPayment || options?.receipt) ? nextPaidUntil(prevBundle && prevBundle.paidUntil, billingCycle) : (prevBundle ? prevBundle.paidUntil || null : null);
     parent.studentSubscriptions[st.id] = {
       tier: tier || 'premium',
       billingCycle,
+      paidUntil: bundlePaidUntil,
       bundleType: isBriTarget ? 'igcse_family' : 'cbc_family',
+      paymentReceipt: options?.receipt || null,
+      paymentIntentId: options?.intentId || null,
+      verifiedPayment: Boolean(options?.verifiedPayment || options?.receipt),
       updatedAt: new Date().toISOString()
     };
+    parent.childrenSubscriptions[st.id] = tier || 'premium';
     st.subscriptionTier = tier || 'premium';
+    st.paidUntil = bundlePaidUntil;
     st.tierUpdatedAt = new Date().toISOString();
 
     // Auto-enroll any pending requested subjects
@@ -678,6 +812,16 @@ function setCurriculumFamilySubscription(parentEmailOrPhone, curriculumFamily, t
       pendingReq.approvedAt = new Date().toISOString();
     }
   });
+
+  if (options && options.receipt) {
+    paymentStore.markReceiptConsumed(options.receipt, {
+      email: parent.email,
+      bundleType: isBriTarget ? 'igcse_family' : 'cbc_family',
+      tier,
+      billingCycle,
+      type: 'family'
+    });
+  }
 
   parent.lastActive = new Date().toISOString();
   saveJson(PARENTS_FILE, store);
@@ -766,53 +910,46 @@ function dismissUpgradeRequest(emailOrPhone, studentId, requestedSubject) {
   return { success: true, request: req };
 }
 
-// ── PENDING M-PESA PAYMENTS TRACKING ──────────────────────────
+// ── PENDING M-PESA PAYMENTS TRACKING (DELEGATED TO PAYMENTSTORE) ──
 const PENDING_PAYMENTS_FILE = path.join(DATA_DIR, 'pending_payments.json');
 
 function recordPendingPayment({ checkoutRequestId, transactionRef, email, studentId, tier, billingCycle, amount, phone }) {
-  const store = loadJson(PENDING_PAYMENTS_FILE, { payments: [] });
-  const entry = {
+  const intent = paymentStore.createIntent({
     checkoutRequestId,
-    transactionRef: transactionRef || null,
-    email: (email || '').toLowerCase().trim(),
+    transactionRef,
+    email,
     studentId: studentId || null,
     tier: tier || 'standard',
-    billingCycle: billingCycle || 'monthly',
+    planPeriod: billingCycle || 'monthly',
     amount: amount || 0,
     phone: phone || null,
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  };
-  store.payments = store.payments || [];
-  store.payments.unshift(entry);
-  if (store.payments.length > 50) store.payments = store.payments.slice(0, 50);
-  saveJson(PENDING_PAYMENTS_FILE, store);
-  return entry;
+    provider: 'daraja'
+  });
+  return intent;
 }
 
 function findPendingPayment(query = {}) {
-  const store = loadJson(PENDING_PAYMENTS_FILE, { payments: [] });
-  if (!store.payments) return null;
-  return store.payments.find(p => {
-    if (query.checkoutRequestId && p.checkoutRequestId === query.checkoutRequestId) return true;
-    if (query.transactionRef && p.transactionRef === query.transactionRef) return true;
-    return false;
-  }) || null;
+  return paymentStore.findIntent(query);
 }
 
 function completePendingPayment(checkoutRequestIdOrRef, metadata = {}) {
-  const store = loadJson(PENDING_PAYMENTS_FILE, { payments: [] });
-  if (!store.payments) return null;
-  const payment = store.payments.find(p =>
-    p.checkoutRequestId === checkoutRequestIdOrRef || p.transactionRef === checkoutRequestIdOrRef
-  );
+  const payment = paymentStore.findIntent({
+    checkoutRequestId: checkoutRequestIdOrRef,
+    transactionRef: checkoutRequestIdOrRef,
+    intentId: checkoutRequestIdOrRef
+  });
   if (!payment) return null;
-  payment.status = 'completed';
-  payment.completedAt = new Date().toISOString();
-  payment.receipt = metadata.receipt || payment.transactionRef;
-  payment.paidAmount = metadata.paidAmount || payment.amount;
-  saveJson(PENDING_PAYMENTS_FILE, store);
-  return payment;
+
+  const res = paymentStore.completePayment({
+    intentId: payment.id,
+    checkoutRequestId: payment.checkoutRequestId || checkoutRequestIdOrRef,
+    provider: 'daraja',
+    providerReceipt: metadata.receipt || payment.transactionRef || ('REC_' + Date.now()),
+    paidAmount: metadata.paidAmount || payment.amount,
+    currency: metadata.currency || 'KES',
+    rawPayload: metadata.rawPayload
+  });
+  return res.success ? res.payment : null;
 }
 
 // DPA Sec 40 Right to Erasure — Parent-authenticated child data erasure (with 30-day safety retention vault)
@@ -886,6 +1023,10 @@ async function purgeChildData(parentEmailOrPhone, childId) {
 
 module.exports = {
   findParentInStore,
+  getAllParents,
+  setEmailPref,
+  ensureFreshVerifyToken,
+  purgeExpiredUnverifiedParents,
   getParentByEmail,
   findParentByEmail: getParentByEmail,
   getParentByPhone,
@@ -901,6 +1042,7 @@ module.exports = {
   resetFamilyPassword,
   changeFamilyPassword,
   resetChildPin,
+  updateParentProfile,
   updateParentSubscription,
   setChildSubscription,
   setCurriculumFamilySubscription,
@@ -914,6 +1056,7 @@ module.exports = {
   completePendingPayment,
   purgeChildData,
   pricingConfig,
-  pilotConfig
+  pilotConfig,
+  paymentStore
 };
 

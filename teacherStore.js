@@ -11,6 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 const authUtils = require('./authUtils');
 const db = require('./db');
+const vault = require('./cryptoVault'); // relational mirror columns holding personal data are encrypted too
 
 function syncDb(fn) {
   try {
@@ -20,7 +21,7 @@ function syncDb(fn) {
   }
 }
 
-const DATA_DIR = path.join(__dirname, 'data');
+const { DATA_DIR } = require('./dataDir');
 const SCHOOLS_FILE = path.join(DATA_DIR, 'schools.json');
 const TEACHERS_FILE = path.join(DATA_DIR, 'teachers.json');
 const MISSIONS_FILE = path.join(DATA_DIR, 'missions.json');
@@ -29,22 +30,15 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// All reads/writes of data/*.json go through secureJson: personal-data fields are encrypted at rest
+// (see cryptoVault.js) and decrypted again on read, so the rest of this file works with plain values.
 function loadJson(filePath, defaultValue = {}) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error(`[teacherStore] Error loading ${filePath}:`, err.message);
-  }
-  return defaultValue;
+  return require('./secureJson').readJson(filePath, defaultValue, 'teacherStore');
 }
 
 function saveJson(filePath, data) {
   try {
-    authUtils.atomicWriteJsonSync(filePath, data);
-    require('./persistentStore').persist(filePath, data);
+    require('./secureJson').writeJson(filePath, data, 'teacherStore');
   } catch (err) {
     console.error(`[teacherStore] Error saving ${filePath}:`, err.message);
   }
@@ -60,7 +54,7 @@ if (!fs.existsSync(MISSIONS_FILE)) saveJson(MISSIONS_FILE, { missions: [] });
 // ══════════════════════════════════════════════════════════════
 
 /**
- * Generate a unique school admin code (e.g. KUJ-ADMIN)
+ * Generate a unique, unguessable school admin code (e.g. KUJ-7K2PQX)
  */
 function generateAdminCode(name) {
   const words = (name || 'Elingu School')
@@ -76,13 +70,15 @@ function generateAdminCode(name) {
     prefix = 'SCH';
   }
 
+  // The last part is random so a code cannot be guessed from the school's name (anyone holding it can ask to join as staff).
   const store = loadJson(SCHOOLS_FILE, { schools: [] });
-  let candidate = `${prefix}-ADMIN`;
-  let counter = 1;
-  while (store.schools.some(s => s.adminCode === candidate)) {
-    counter++;
-    candidate = `${prefix}${counter}-ADMIN`;
-  }
+  const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let candidate;
+  do {
+    let tail = '';
+    for (let i = 0; i < 6; i++) tail += ALPHABET[crypto.randomInt(ALPHABET.length)];
+    candidate = prefix + '-' + tail;
+  } while (store.schools.some(s => s.adminCode === candidate));
   return candidate;
 }
 
@@ -308,7 +304,7 @@ function addStreamsToSchool(schoolId, grade, streamNames) {
 /**
  * Register a teacher or school admin
  */
-async function createTeacher({ name, idNumber, email, phone, password, role = 'subject_teacher', schoolId, assignments = [] }) {
+async function createTeacher({ name, idNumber, email, phone, password, role = 'subject_teacher', schoolId, assignments = [], requireEmailVerification = false, requireApproval = false }) {
   const store = loadJson(TEACHERS_FILE, { teachers: [] });
 
   const cleanName = (name || '').trim();
@@ -376,7 +372,10 @@ async function createTeacher({ name, idNumber, email, phone, password, role = 's
     createdAt: new Date().toISOString(),
     lastActive: new Date().toISOString(),
     failedLoginAttempts: 0,
-    lockedUntil: null
+    lockedUntil: null,
+    // Absent on older accounts, which keep working. New headteachers must prove their email; new staff must be approved by a leader.
+    ...(requireEmailVerification && cleanEmail ? { emailVerified: false } : {}),
+    ...(requireApproval ? { approvalStatus: 'pending_approval' } : {})
   };
 
   store.teachers.push(newTeacher);
@@ -396,10 +395,10 @@ async function createTeacher({ name, idNumber, email, phone, password, role = 's
         last_active = EXCLUDED.last_active
     `, [
       newTeacher.id,
-      newTeacher.name,
-      newTeacher.idNumber,
-      newTeacher.email,
-      newTeacher.phone,
+      vault.encryptValue(newTeacher.name, 'name'),
+      vault.encryptValue(newTeacher.idNumber, 'idNumber'),
+      vault.encryptValue(newTeacher.email, 'email'),
+      vault.encryptValue(newTeacher.phone, 'phone'),
       newTeacher.passwordHash,
       newTeacher.role,
       newTeacher.schoolId,
@@ -412,9 +411,16 @@ async function createTeacher({ name, idNumber, email, phone, password, role = 's
     ]);
   });
 
-  // Return sanitized object (no hash)
-  const { passwordHash: _, ...sanitized } = newTeacher;
-  return sanitized;
+  return publicTeacher(newTeacher);
+}
+
+const PRIVATE_TEACHER_FIELDS = ['passwordHash', 'otpHash', 'otpExpiresAt', 'otpVerified', 'otpVerifiedUntil', 'otpWrongGuesses', 'otpCooldownUntil', 'otpRequestCount', 'tokensValidAfter'];
+/** A teacher record with every secret removed, safe to send to the browser. */
+function publicTeacher(rec) {
+  if (!rec) return rec;
+  const out = Object.assign({}, rec);
+  PRIVATE_TEACHER_FIELDS.forEach(k => delete out[k]);
+  return out;
 }
 
 function getTeacherById(teacherId, includePrivate = false) {
@@ -423,8 +429,7 @@ function getTeacherById(teacherId, includePrivate = false) {
   const teacher = store.teachers.find(t => t.id === teacherId);
   if (!teacher) return null;
   if (includePrivate) return teacher;
-  const { passwordHash: _, ...safe } = teacher;
-  return safe;
+  return publicTeacher(teacher);
 }
 
 function getTeacherByIdentifier(identifier, includePrivate = false) {
@@ -440,8 +445,7 @@ function getTeacherByIdentifier(identifier, includePrivate = false) {
   );
   if (!teacher) return null;
   if (includePrivate) return teacher;
-  const { passwordHash: _, ...safe } = teacher;
-  return safe;
+  return publicTeacher(teacher);
 }
 
 /**
@@ -479,13 +483,23 @@ async function verifyTeacherLogin(identifier, password) {
     };
   }
 
-  // Success
   authUtils.clearFailedAttempts(liveRecord);
+  if (liveRecord.emailVerified === false) {
+    saveJson(TEACHERS_FILE, store);
+    return { success: false, code: 'EMAIL_NOT_VERIFIED', error: 'Please confirm your email first. Use the 6-digit code we sent you, or ask for a new one.' };
+  }
+  if (liveRecord.approvalStatus === 'pending_approval') {
+    saveJson(TEACHERS_FILE, store);
+    return { success: false, code: 'PENDING_APPROVAL', error: 'Your Headteacher has not approved your account yet. You can sign in as soon as they do.' };
+  }
+  if (liveRecord.approvalStatus === 'rejected') {
+    saveJson(TEACHERS_FILE, store);
+    return { success: false, code: 'NOT_APPROVED', error: 'Your school did not approve this account. Please speak to your Headteacher.' };
+  }
   liveRecord.lastActive = new Date().toISOString();
   saveJson(TEACHERS_FILE, store);
 
-  const { passwordHash: _, ...sanitized } = liveRecord;
-  return { success: true, teacher: sanitized };
+  return { success: true, teacher: publicTeacher(liveRecord) };
 }
 
 function getTeachersBySchool(schoolId) {
@@ -582,6 +596,8 @@ function offboardTeacher({ headteacherId, targetTeacherId, schoolId }) {
   }
 
   const removedTeacher = store.teachers.splice(targetIdx, 1)[0];
+  // The record is deleted, so remember the id: any sign-in this person already holds must stop working straight away.
+  store.revokedTeacherIds = (store.revokedTeacherIds || []).concat([{ id: removedTeacher.id, at: new Date().toISOString() }]);
   saveJson(TEACHERS_FILE, store);
 
   syncDb(() => {
@@ -772,7 +788,7 @@ function getSchoolMacroAnalytics(schoolId) {
       role: t.role,
       email: t.email,
       phone: t.phone,
-      idNumber: t.idNumber,
+      idNumber: maskIdNumber(t.idNumber),
       assignments: t.assignments || [],
       createdAt: t.createdAt
     })),
@@ -1440,6 +1456,115 @@ function recordSchoolSafeguardingAlert({ schoolId, studentId, studentHandle, han
   return alertItem;
 }
 
+/** National ID / passport numbers are shown masked (last 3 characters only) everywhere in the portal. */
+function maskIdNumber(v) {
+  const x = String(v || '');
+  return x.length > 3 ? '*'.repeat(x.length - 3) + x.slice(-3) : (x ? '***' : '');
+}
+
+// ── One-time codes for confirming an email and for resetting a password ──
+function findLiveByContact(store, identifier) {
+  const raw = String(identifier || '').trim();
+  if (!raw) return null;
+  const phone = authUtils.normalizeKenyanPhone(raw);
+  const lower = raw.toLowerCase();
+  // Only an email address or a phone number (never a National ID number) can be used here.
+  if (!raw.includes('@') && !phone) return null;
+  return store.teachers.find(x => x.email === lower || (x.phone && phone && x.phone === phone)) || null;
+}
+
+/** Start a code for this account. Returns null when there is no such account or it is cooling down (callers answer the same either way). */
+function requestTeacherOtp(identifier) {
+  const store = loadJson(TEACHERS_FILE, { teachers: [] });
+  const rec = findLiveByContact(store, identifier);
+  if (!rec) return null;
+  if (authUtils.checkOTPCooldown(rec).coolingDown) return null;
+  authUtils.recordOTPRequest(rec);
+  const otp = authUtils.generateOTP();
+  authUtils.storeOTPOnRecord(rec, otp);
+  saveJson(TEACHERS_FILE, store);
+  const hasRealEmail = !!rec.email && !rec.email.endsWith('@teacher.elingu.local');
+  return { teacher: publicTeacher(rec), otp, channel: hasRealEmail ? 'email' : 'sms' };
+}
+
+function verifyTeacherEmailWithOtp(identifier, otp) {
+  const store = loadJson(TEACHERS_FILE, { teachers: [] });
+  const rec = findLiveByContact(store, identifier);
+  if (!rec) return { success: false, error: 'That code is not right. Please check it and try again.' };
+  const r = authUtils.verifyOTPFromRecord(rec, String(otp || '').trim());
+  saveJson(TEACHERS_FILE, store);
+  if (!r.valid) return { success: false, error: r.error };
+  if (rec.emailVerified === false) rec.emailVerified = true;
+  rec.otpVerified = false; rec.otpVerifiedUntil = null;
+  saveJson(TEACHERS_FILE, store);
+  return { success: true };
+}
+
+async function resetTeacherPasswordWithOtp(identifier, otp, newPassword) {
+  const passCheck = authUtils.validatePassword(newPassword);
+  if (!passCheck.valid) return { success: false, error: passCheck.error || 'Password does not meet strength requirements.' };
+  const store = loadJson(TEACHERS_FILE, { teachers: [] });
+  const rec = findLiveByContact(store, identifier);
+  if (!rec) return { success: false, error: 'That code is not right. Please check it and try again.' };
+  const r = authUtils.verifyOTPFromRecord(rec, String(otp || '').trim());
+  if (!r.valid) { saveJson(TEACHERS_FILE, store); return { success: false, error: r.error }; }
+  rec.passwordHash = await authUtils.hashCredential(newPassword);
+  rec.otpVerified = false; rec.otpVerifiedUntil = null;
+  authUtils.clearFailedAttempts(rec);
+  rec.tokensValidAfter = Date.now();            // every earlier sign-in stops working
+  if (rec.emailVerified === false && rec.email && !rec.email.endsWith('@teacher.elingu.local')) rec.emailVerified = true;
+  saveJson(TEACHERS_FILE, store);
+  return { success: true };
+}
+
+/** Staff who asked to join a school and are waiting for a leader's decision. */
+function getPendingStaff(schoolId) {
+  const store = loadJson(TEACHERS_FILE, { teachers: [] });
+  return store.teachers
+    .filter(x => x.schoolId === schoolId && x.approvalStatus === 'pending_approval')
+    .map(x => ({ id: x.id, name: x.name, role: x.role, email: x.email, phone: x.phone, idNumber: maskIdNumber(x.idNumber), createdAt: x.createdAt }));
+}
+
+function decideStaff(schoolId, teacherId, approve) {
+  const store = loadJson(TEACHERS_FILE, { teachers: [] });
+  const rec = store.teachers.find(x => x.id === teacherId && x.schoolId === schoolId && x.approvalStatus === 'pending_approval');
+  if (!rec) return { success: false, error: 'No pending request found for that person.' };
+  rec.approvalStatus = approve ? 'approved' : 'rejected';
+  rec.approvalDecidedAt = new Date().toISOString();
+  saveJson(TEACHERS_FILE, store);
+  return { success: true, teacher: publicTeacher(rec) };
+}
+
+/** True for a teacher who was offboarded: their old sign-ins are refused. */
+function isTeacherRevoked(teacherId) {
+  const store = loadJson(TEACHERS_FILE, { teachers: [] });
+  return (store.revokedTeacherIds || []).some(r => r.id === teacherId);
+}
+
+const SAFEGUARDING_STATUSES = ['pending_dsl_review', 'in_progress', 'resolved'];
+
+/** Alerts for one school, newest first. Only the school's leaders may call this (enforced in the route). */
+function getSafeguardingAlerts(schoolId) {
+  const school = getSchoolById(schoolId);
+  if (!school) return [];
+  return (school.safeguardingAlerts || []).map(a => Object.assign({}, a));
+}
+
+/** A leader marks an alert as being looked at or resolved, with a short private note. Parents are never told automatically. */
+function updateSafeguardingAlert(schoolId, alertId, { status, note, reviewedBy }) {
+  if (!SAFEGUARDING_STATUSES.includes(status)) return { success: false, error: 'Unknown status.' };
+  const store = loadJson(SCHOOLS_FILE, { schools: [] });
+  const school = (store.schools || []).find(s => s.id === schoolId);
+  const alertItem = school && (school.safeguardingAlerts || []).find(a => a.id === alertId);
+  if (!alertItem) return { success: false, error: 'Alert not found.' };
+  alertItem.status = status;
+  alertItem.reviewedBy = String(reviewedBy || '').slice(0, 60);
+  alertItem.reviewedAt = new Date().toISOString();
+  if (typeof note === 'string' && note.trim()) alertItem.reviewNote = note.replace(/<[^>]*>/g, '').trim().slice(0, 500);
+  saveJson(SCHOOLS_FILE, store);
+  return { success: true, alert: Object.assign({}, alertItem) };
+}
+
 /**
  * Check whether a school's institutional registration has been approved by Super Admin.
  * While pending_approval, codes are generated and dormant — teacher/student onboarding is blocked.
@@ -1469,6 +1594,7 @@ function approveSchoolInstitution(schoolId, approvedBy = 'super_admin') {
 module.exports = {
   // School & Stream Management
   createSchool,
+  generateAdminCode,
   isSchoolBritish,
   isSchoolApproved,
   getSchoolById,
@@ -1480,6 +1606,16 @@ module.exports = {
   generateStreamCode,
   approveSchoolInstitution,
   recordSchoolSafeguardingAlert,
+  getSafeguardingAlerts,
+  isTeacherRevoked,
+  requestTeacherOtp,
+  verifyTeacherEmailWithOtp,
+  resetTeacherPasswordWithOtp,
+  getPendingStaff,
+  decideStaff,
+  publicTeacher,
+  maskIdNumber,
+  updateSafeguardingAlert,
 
   // Teacher Authentication & RBAC
   createTeacher,

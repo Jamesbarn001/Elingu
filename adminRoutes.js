@@ -18,9 +18,8 @@ function requireAdminAuth(req, res, next) {
     token = authHeader.slice(7).trim();
   } else if (req.headers['x-admin-token']) {
     token = req.headers['x-admin-token'];
-  } else if (req.query && req.query.token) {
-    token = req.query.token;
   }
+  // SECURITY: tokens are never accepted in the URL.
 
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized. Super Admin login required.' });
@@ -64,6 +63,26 @@ router.post('/api/admin/login', async (req, res) => {
 // GET /api/admin/me — verify active session
 router.get('/api/admin/me', requireAdminAuth, (req, res) => {
   res.json({ success: true, admin: req.admin });
+});
+
+// Practice papers live in the database. List them, and make a running app pick up changes made with scripts/exam_papers.js.
+router.get('/api/admin/exam-papers', requireAdminAuth, async (req, res) => {
+  try {
+    const bank = require('./examBank');
+    res.json({ success: true, serving: bank.status(), papers: await bank.list() });
+  } catch (err) {
+    console.error('[adminRoutes] exam papers list error:', err.message);
+    res.status(500).json({ error: 'Failed to list practice papers.' });
+  }
+});
+router.post('/api/admin/exam-papers/reload', requireAdminAuth, async (req, res) => {
+  try {
+    const result = await require('./examBank').load();
+    res.json({ success: true, result });
+  } catch (err) {
+    console.error('[adminRoutes] exam papers reload error:', err.message);
+    res.status(500).json({ error: 'Failed to reload practice papers.' });
+  }
 });
 
 // GET /api/admin/metrics — Tab 1: Command Center metrics
@@ -252,9 +271,7 @@ router.get(['/admin', '/admin/portal', '/admin/login'], (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Elingu — Super Admin Command Center</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/fonts.css">
   <style>
     :root {
       --bg: #0A0F1D;
@@ -1075,7 +1092,7 @@ router.get(['/admin', '/admin/portal', '/admin/login'], (req, res) => {
       </div>
       <div class="login-header">
         <div style="position: relative; display: inline-block;">
-          <img src="/elingu-avatar.png" alt="Elingu" style="width: 68px; height: 68px; border-radius: 50%; border: 2.5px solid #00D4AA; box-shadow: 0 0 25px rgba(0,212,170,0.4);" />
+          <img src="/elingu-avatar.webp" alt="Elingu" style="width: 68px; height: 68px; border-radius: 50%; border: 2.5px solid #00D4AA; box-shadow: 0 0 25px rgba(0,212,170,0.4);" />
         </div>
         <h2 class="login-title">Super Admin Portal</h2>
         <p class="login-sub">Founder Command Center & Operations</p>
@@ -1104,7 +1121,7 @@ router.get(['/admin', '/admin/portal', '/admin/login'], (req, res) => {
   <!-- HEADER -->
   <header class="admin-header">
     <a href="/admin" class="brand-left">
-      <img src="/elingu-avatar.png" alt="Logo" class="brand-logo" />
+      <img src="/elingu-avatar.webp" alt="Logo" class="brand-logo" />
       <div>
         <span class="brand-title">Elingu</span>
         <span class="admin-badge">Super Admin</span>

@@ -11,7 +11,7 @@ module.exports = {
       body: { name: 'Nakuru JSS', county: 'Nakuru', adminCode, grades: [7], streams: { '7': ['East'] } }
     });
 
-    const reg = await ctx.api('/api/teacher/register', {
+    const reg = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Koech',
@@ -52,7 +52,7 @@ module.exports = {
       body: { name: 'Eldoret JSS', county: 'Uasin Gishu', adminCode, grades: [8], streams: { '8': ['West'] } }
     });
 
-    const reg = await ctx.api('/api/teacher/register', {
+    const reg = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Rono',
@@ -87,7 +87,7 @@ module.exports = {
     });
     const schoolId = schRes.data.school.id;
 
-    const reg = await ctx.api('/api/teacher/register', {
+    const reg = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Wekesa',
@@ -145,7 +145,7 @@ module.exports = {
     const schoolId = schRes.data.school.id;
 
     // Teacher assigned ONLY to Grade 7 East
-    const reg = await ctx.api('/api/teacher/register', {
+    const reg = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Maina',
@@ -183,7 +183,7 @@ module.exports = {
       body: { name: 'Thika JSS', county: 'Kiambu', adminCode, grades: [7], streams: { '7': ['East'] } }
     });
 
-    const reg = await ctx.api('/api/teacher/register', {
+    const reg = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Njeri',

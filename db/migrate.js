@@ -9,10 +9,10 @@ const path = require('path');
 const db = require('./client');
 
 function loadJson(fileName, fallback = null) {
-  const filePath = path.resolve(__dirname, '../data', fileName);
+  const filePath = path.join(require('../dataDir').DATA_DIR, fileName);
   if (!fs.existsSync(filePath)) return fallback;
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return require('../secureJson').readJson(filePath, fallback, 'db/migrate');
   } catch (e) {
     console.warn(`Warning: Could not parse ${fileName}:`, e.message);
     return fallback;

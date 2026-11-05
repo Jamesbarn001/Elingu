@@ -14,7 +14,7 @@ module.exports = {
     const schoolId = schRes.data.school.id;
 
     // 2. Register teacher
-    const regRes = await ctx.api('/api/teacher/register', {
+    const regRes = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Chebet',
@@ -52,7 +52,7 @@ module.exports = {
     });
     const schoolId = schRes.data.school.id;
 
-    const regRes = await ctx.api('/api/teacher/register', {
+    const regRes = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. Kip',
@@ -104,7 +104,7 @@ module.exports = {
     });
 
     // Register teacher in School 1
-    const teacherRes = await ctx.api('/api/teacher/register', {
+    const teacherRes = await ctx.registerTeacher('/api/teacher/register', {
       method: 'POST',
       body: {
         name: 'Tr. One',

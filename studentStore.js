@@ -9,7 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const authUtils = require('./authUtils');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const { DATA_DIR } = require('./dataDir');
 const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const ANALYTICS_FILE = path.join(DATA_DIR, 'analytics.json');
@@ -18,6 +18,7 @@ const pricingConfig = require('./pricingConfig');
 const parentStore = require('./parentStore');
 const pilotConfig = require('./pilotConfig');
 const db = require('./db');
+const vault = require('./cryptoVault'); // relational mirror columns holding personal data are encrypted too
 
 function syncDb(fn) {
   try {
@@ -32,24 +33,17 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// All reads/writes of data/*.json go through secureJson: personal-data fields are encrypted at rest
+// (see cryptoVault.js) and decrypted again on read, so the rest of this file works with plain values.
 function loadJson(filePath, defaultValue = {}) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error(`Error loading ${filePath}:`, err.message);
-  }
-  return defaultValue;
+  return require('./secureJson').readJson(filePath, defaultValue, 'studentStore');
 }
 
 function saveJson(filePath, data) {
   try {
-    authUtils.atomicWriteJsonSync(filePath, data);
-    require('./persistentStore').persist(filePath, data);
+    require('./secureJson').writeJson(filePath, data, 'studentStore');
   } catch (err) {
-    console.error(`Error saving ${filePath}:`, err.message);
+    console.error(`[studentStore] Error saving ${filePath}:`, err.message);
   }
 }
 
@@ -189,7 +183,8 @@ function getSchoolsForCounty(county) {
 }
 
 // Dynamic Tier Resolver — synchronises child with parent's active subscription and pilot status
-function resolveStudentTier(student) {
+function resolveStudentTier(student, options = {}) {
+  const nowMs = options.now ? new Date(options.now).getTime() : Date.now();   // `now` lets tests move the clock without touching data files
   if (!student) return { subscriptionTier: 'free', tierInfo: pricingConfig.PRICING_TIERS.free, isPilotActive: false };
 
   let parent = null;
@@ -206,10 +201,16 @@ function resolveStudentTier(student) {
   const parentPilotActive = parent ? pilotConfig.isPilotActive(parent) : false;
   const isPilot = studentPilotActive || parentPilotActive;
 
+  // A paid plan with an end date stops working 3 days after it (a grace period). Plans without an end date (older
+  // accounts, school and pilot access) are unaffected.
+  const GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+  const live = (paidUntil) => !paidUntil || nowMs <= new Date(paidUntil).getTime() + GRACE_MS;
+  const childRec = parent?.studentSubscriptions?.[student.id];
+
   let tier = 'free';
-  const childSubTier = parent?.studentSubscriptions?.[student.id]?.tier;
-  const parentTier = parent?.subscriptionTier;
-  let studentTier = student?.subscriptionTier;
+  const childSubTier = live(childRec && childRec.paidUntil) ? childRec?.tier : null;
+  const parentTier = live(parent && parent.paidUntil) ? parent?.subscriptionTier : null;
+  let studentTier = (student?.subscriptionTier === 'school' || live(student && student.paidUntil)) ? student?.subscriptionTier : null;
   if (studentTier === 'school' && student?.schoolId) {
     try {
       const teacherStore = require('./teacherStore');
@@ -259,8 +260,19 @@ function resolveStudentTier(student) {
     schoolLevel: student.schoolLevel || (parseInt(student.grade || 7, 10) >= 10 ? 'SS' : 'JSS')
   };
 
+  // What the family is told: until when, and whether it is ending soon or has ended.
+  const dates = [childRec && childRec.paidUntil, parent && parent.paidUntil, student && student.paidUntil].filter(Boolean).map(d => new Date(d).getTime());
+  let subscription = { status: 'none', paidUntil: null, daysLeft: null };
+  if (dates.length && (tier === 'standard' || tier === 'premium' || dates.some(d => d < nowMs))) {
+    const latest = Math.max.apply(null, dates);
+    const daysLeft = Math.ceil((latest - nowMs) / 86400000);
+    const status = tier === 'free' ? 'expired' : (latest >= nowMs ? (daysLeft <= 7 ? 'ending_soon' : 'active') : 'grace');
+    subscription = { status, paidUntil: new Date(latest).toISOString(), daysLeft };
+  }
+
   return {
     subscriptionTier: tier,
+    subscription,
     tierInfo,
     isPilotActive: isPilot,
     pilotStatus: studentPilotActive
@@ -456,8 +468,9 @@ function isHandleOrEmailTaken(handle, email) {
 
 function createStudent({ fullName, realName, handle, email, studentEmail, studentPhone, parentPhone, grade, county, avatar, pin, age, school, quests, freeSubjects, pilotCode, parentConsent, schoolId, stream, streamJoinCode, pathway, selectedSubjects, curriculum, examBoard, examTier, yearGroup, schoolLevel }) {
   const store = loadJson(STUDENTS_FILE, { students: [] });
-  const cleanRealName = (fullName || realName || '').trim().slice(0, 60) || null;
-  const cleanHandle = (handle || cleanRealName || 'Mwanafunzi').trim().slice(0, 24);
+  const cleanRealName = authUtils.cleanDisplayText(fullName || realName || '', 60) || null;
+  const nickCheck = authUtils.validateNickname(handle || cleanRealName || 'Mwanafunzi');
+  const cleanHandle = nickCheck.valid ? nickCheck.value : authUtils.cleanDisplayText(handle || 'Mwanafunzi', 24).replace(/[^\p{L}\p{N}\p{M} ._\-]/gu, '') || 'Mwanafunzi';
   const cleanEmail = (email || '').trim().toLowerCase().slice(0, 80);
   const cleanStudentEmail = studentEmail ? String(studentEmail).trim().toLowerCase().slice(0, 80) : null;
   const cleanStudentPhone = studentPhone ? authUtils.normalizeKenyanPhone(studentPhone) : null;
@@ -474,7 +487,7 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
   // STRICT RULE: Tiers (Core vs Extended) exist ONLY for Year 10 and 11. Years 7–9 follow unified Checkpoint syllabus.
   const cleanExamTier = (isBritishCurriculumFlag && cleanGrade >= 10) ? (String(examTier || '').toLowerCase() === 'core' ? 'core' : 'extended') : null;
   const cleanCounty = KENYAN_COUNTIES.includes(county) ? county : 'Nairobi';
-  const cleanAvatar = avatar || '🦁';
+  const cleanAvatar = authUtils.cleanAvatar(avatar);
   
   const pinValidation = authUtils.validateStudentPin(pin);
   if (!pinValidation.valid) {
@@ -484,7 +497,7 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
   }
   const cleanPin = pin.toString();
   const cleanAge = age ? parseInt(age, 10) : (cleanGrade === 6 ? 11 : cleanGrade === 7 ? 12 : cleanGrade === 8 ? 14 : 15);
-  let cleanSchool = (school || (isBritishCurriculumFlag ? 'International School Nairobi' : `${cleanCounty} Junior Secondary`)).trim().slice(0, 60);
+  let cleanSchool = authUtils.cleanDisplayText(school || (isBritishCurriculumFlag ? 'International School Nairobi' : `${cleanCounty} Junior Secondary`), 60);
   let resolvedSchoolId = schoolId || null;
   let resolvedStream = stream || null;
   let resolvedStreamJoinCode = streamJoinCode ? String(streamJoinCode).trim().toUpperCase() : null;
@@ -624,7 +637,12 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
     pilotActivatedAt: pilotData ? pilotData.activatedAt : null,
     pilotExpiresAt: pilotData ? pilotData.expiresAt : null,
     subscriptionTier: resolvedSchoolId ? 'school' : (pilotData ? 'pilot' : 'free'),
-    parentConsent: parentConsent !== undefined ? !!parentConsent : true,
+    // DPA 2019 s.32/33: the controller must be able to PROVE a parent or guardian consented. A tick-box typed by the
+    // child is not proof, so parentConsent starts false and is only set (with a full record in `consent`) when the
+    // parent confirms through their own link. What the child said at sign-up is kept separately as an attestation.
+    parentConsent: false,
+    childAttestedPermissionAt: parentConsent ? new Date().toISOString() : null,
+    consent: null,
     // parentVerified starts false — set to true when parent clicks email link
     parentVerified: false,
     pinHash: authUtils.hashCredentialSync(cleanPin),
@@ -671,10 +689,10 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
       newStudent.school,
       newStudent.stream,
       newStudent.streamJoinCode,
-      newStudent.email,
-      newStudent.studentEmail,
-      newStudent.studentPhone,
-      newStudent.parentPhone,
+      vault.encryptValue(newStudent.email, 'email'),
+      vault.encryptValue(newStudent.studentEmail, 'studentEmail'),
+      vault.encryptValue(newStudent.studentPhone, 'studentPhone'),
+      vault.encryptValue(newStudent.parentPhone, 'parentPhone'),
       newStudent.avatar,
       newStudent.age,
       newStudent.pinHash,
@@ -855,6 +873,7 @@ async function resetStudentPinWithOTP(identifier, otp, newPin) {
   }
 
   student.pinHash = await authUtils.hashCredential(cleanPin);
+  student.tokensValidAfter = Date.now(); // a PIN reset signs the learner out everywhere
   authUtils.clearFailedAttempts(student);
   student.lastActive = new Date().toISOString();
   saveJson(STUDENTS_FILE, store);
@@ -1011,13 +1030,15 @@ function updateStudentProfile(id, { grade, county, age, school, avatar, handle, 
     student.age = parseInt(age, 10);
   }
   if (school) {
-    student.school = school.trim().slice(0, 60);
+    student.school = authUtils.cleanDisplayText(school, 60);
   }
   if (avatar) {
-    student.avatar = avatar;
+    student.avatar = authUtils.cleanAvatar(avatar, student.avatar || undefined);
   }
   if (handle) {
-    student.handle = handle.trim().slice(0, 24);
+    const nick = authUtils.validateNickname(handle);
+    if (!nick.valid) return { error: nick.error, code: 'INVALID_NICKNAME' };
+    student.handle = nick.value;
   }
   if (email !== undefined && (!student.parentVerified || !student.email || adminOverride)) {
     student.email = email.trim().toLowerCase().slice(0, 80);
@@ -1032,14 +1053,14 @@ function updateStudentProfile(id, { grade, county, age, school, avatar, handle, 
     student.points = points;
   }
   if (Array.isArray(selectedSubjects)) {
-    student.selectedSubjects = selectedSubjects;
-    student.quests = selectedSubjects;
+    student.selectedSubjects = selectedSubjects.slice(0, 20).map(x => authUtils.cleanDisplayText(x, 60)).filter(Boolean);
+    student.quests = student.selectedSubjects;
   } else if (Array.isArray(quests)) {
-    student.quests = quests;
-    student.selectedSubjects = quests;
+    student.quests = quests.slice(0, 20).map(x => authUtils.cleanDisplayText(x, 60)).filter(Boolean);
+    student.selectedSubjects = student.quests;
   }
   if (Array.isArray(freeSubjects)) {
-    student.freeSubjects = freeSubjects.slice(0, 3);
+    student.freeSubjects = freeSubjects.slice(0, 3).map(x => authUtils.cleanDisplayText(x, 60)).filter(Boolean);
   }
 
   student.lastActive = new Date().toISOString();
@@ -1088,6 +1109,9 @@ function activateStudentPilot(studentId, accessCode) {
   const store = loadJson(STUDENTS_FILE, { students: [] });
   const student = store.students.find(s => s.id === studentId);
   if (!student) return { success: false, error: 'Student not found.' };
+  if (student.pilotCode && String(student.pilotCode).toUpperCase() === pilotRes.code) {
+    return { success: false, error: 'This pilot code has already been used on this account.' };
+  }
 
   student.pilotCode = pilotRes.code;
   student.pilotType = pilotRes.type;
@@ -1201,12 +1225,17 @@ function getStudentTonightsGuide(studentId, subject) {
   return sessions[key]?.tonightsGuide || null;
 }
 
+/** Today's date in Kenya (YYYY-MM-DD). The daily limit and the streak both count Kenyan calendar days. */
+function todayNairobi(now = new Date()) {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Nairobi' }).format(now); } catch (e) { return now.toISOString().slice(0, 10); }
+}
+
 // Daily turn counters for tier enforcement (e.g. 15 turns/day on Free tier)
 function getDailyTurns(studentId) {
   const store = loadJson(STUDENTS_FILE, { students: [] });
   const student = store.students.find(s => s.id === studentId);
   if (!student) return 0;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayNairobi();   // was UTC, which let the Free daily limit reset at 3am Kenyan time instead of midnight
   if (student.dailyTurnDate === today) {
     return student.dailyTurnsCount || 0;
   }
@@ -1233,8 +1262,17 @@ function recordDailyTurn(studentId) {
       const diffDays = Math.round((currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
       if (diffDays === 1) {
         student.streak = (student.streak || 1) + 1;
+      } else if (diffDays === 2 && (student.freezes || 0) > 0) {
+        // One missed day is forgiven by a streak freeze (earned by reaching a 7-day streak, kept up to 2).
+        student.freezes -= 1;
+        student.streak = (student.streak || 1) + 1;
+        student.freezeUsedOn = today;
       } else if (diffDays > 1) {
         student.streak = 1;
+      }
+      // Every 7th day in a row earns a freeze (max 2).
+      if (diffDays >= 1 && student.streak > 0 && student.streak % 7 === 0) {
+        student.freezes = Math.min(2, (student.freezes || 0) + 1);
       }
     } else {
       student.streak = student.streak || 1;
@@ -1245,8 +1283,7 @@ function recordDailyTurn(studentId) {
     student.dailyTurnsCount = (student.dailyTurnsCount || 0) + 1;
   }
 
-  // Award 5 points per turn
-  student.points = (student.points !== undefined ? student.points : 150) + 5;
+  // Points are no longer given per turn: they come from the server-side ledger (gamification.js) for evidence of learning.
   student.totalTurns = (student.totalTurns || 0) + 1;
   student.lastActive = now.toISOString();
   saveJson(STUDENTS_FILE, store);
@@ -1271,6 +1308,16 @@ function recordDailyTurn(studentId) {
   });
 
   return student.dailyTurnsCount;
+}
+
+/** Mirror XP from the gamification ledger into the visible points total. Only gamification.js calls this. */
+function addPointsFromLedger(studentId, xp) {
+  const store = loadJson(STUDENTS_FILE, { students: [] });
+  const student = store.students.find(s => s.id === studentId);
+  if (!student) return 0;
+  student.points = (student.points !== undefined ? student.points : 0) + Math.max(0, Math.min(500, Math.floor(Number(xp) || 0)));
+  saveJson(STUDENTS_FILE, store);
+  return student.points;
 }
 
 function awardStudentPoints(studentId, pointsToAdd) {
@@ -1570,11 +1617,28 @@ function getAggregatedAnalytics(role = 'subject_teacher', filter = {}) {
 }
 
 // Mark a student's account as parent-verified (called after parent clicks email link)
-function setStudentParentVerified(studentId) {
+// Version of the consent wording and privacy notice shown to parents (bump when /privacy or the consent text changes).
+const CONSENT_TEXT_VERSION = '2026-11-v2';
+
+/**
+ * Mark a learner as approved by their parent/guardian and keep an auditable consent record
+ * (what was agreed, when, how, and by which contact). Safe to call twice: the first record is kept.
+ */
+function setStudentParentVerified(studentId, details = {}) {
   const store = loadJson(STUDENTS_FILE, { students: [] });
   const student = store.students.find(s => s.id === studentId);
   if (!student) return false;
   student.parentVerified = true;
+  student.parentConsent = true;
+  if (!student.consent) {
+    student.consent = {
+      consentGivenAt: new Date().toISOString(),
+      method: details.method || 'parent_link',
+      parentContact: student.parentPhone || student.email || null,
+      textVersion: CONSENT_TEXT_VERSION,
+      scope: 'learning, progress reports and AI tutoring; see /privacy'
+    };
+  }
   saveJson(STUDENTS_FILE, store);
   return true;
 }
@@ -1929,10 +1993,10 @@ async function bulkCreateStudents(studentRows, schoolId, defaults = {}) {
         student.school || null,
         student.stream || null,
         student.streamJoinCode || null,
-        student.email || null,
-        student.studentEmail || null,
-        student.studentPhone || null,
-        student.parentPhone || null,
+        vault.encryptValue(student.email || null, 'email'),
+        vault.encryptValue(student.studentEmail || null, 'studentEmail'),
+        vault.encryptValue(student.studentPhone || null, 'studentPhone'),
+        vault.encryptValue(student.parentPhone || null, 'parentPhone'),
         student.avatar || '🦁',
         student.age || null,
         student.pinHash,
@@ -2043,10 +2107,12 @@ module.exports = {
   updateStudentExamTier,
   verifyStudentPin,
   setStudentParentVerified,
+  CONSENT_TEXT_VERSION,
   getStudentSession,
   saveStudentSession,
   getDailyTurns,
   recordDailyTurn,
+  addPointsFromLedger,
   purgeStudentData,
   getAggregatedAnalytics,
   activateStudentPilot,
@@ -2054,6 +2120,7 @@ module.exports = {
   resetStudentPinWithOTP,
   findStudentByIdentifier,
   getChildActivitySummary,
+  todayNairobi,
   setStudentTier,
   joinStream,
   getStudentsByStream,

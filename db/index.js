@@ -22,5 +22,10 @@ module.exports = {
   students: require('./repositories/studentsRepository'),
   missions: require('./repositories/missionsRepository'),
   sessions: require('./repositories/sessionsRepository'),
-  parents: require('./repositories/parentsRepository')
+  parents: require('./repositories/parentsRepository'),
+  curriculum: require('./repositories/curriculumRepository'),
+  revision: require('./repositories/revisionRepository'),
+
+  // Seeding
+  seedCurriculum: () => require('./seed_curriculum').seed()
 };

@@ -1,0 +1,82 @@
+/* Explore-first screen: pick curriculum → level → subject → see a real lesson, before any account or personal data. */
+#exploreOverlay {
+  position: fixed; inset: 0; z-index: 1000001; overflow-y: auto;
+  background: #FAF7F2; color: #1F2937;
+  font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  -webkit-overflow-scrolling: touch;
+}
+#exploreOverlay[hidden] { display: none; }
+#exploreOverlay * { box-sizing: border-box; }
+.xp-bar {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 16px; background: #0D3A26; color: #fff;
+}
+.xp-brand { font-weight: 800; font-size: 18px; letter-spacing: .2px; }
+.xp-login {
+  min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.55);
+  background: transparent; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer;
+}
+.xp-wrap { max-width: 720px; margin: 0 auto; padding: 22px 16px 120px; }
+.xp-progress { display: flex; gap: 6px; margin-bottom: 18px; }
+.xp-progress span { flex: 1; height: 6px; border-radius: 99px; background: #E5DED2; }
+.xp-progress span.on { background: #0D3A26; }
+.xp-title { font-size: 26px; line-height: 1.2; margin: 0 0 6px; color: #0D3A26; font-weight: 800; }
+.xp-sub { margin: 0 0 18px; font-size: 16px; color: #4B5563; }
+.xp-back {
+  min-height: 44px; padding: 0 4px; margin-bottom: 6px; background: none; border: 0; color: #0B6B43;
+  font-weight: 700; font-size: 15px; cursor: pointer;
+}
+.xp-cards { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 560px) { .xp-cards.two { grid-template-columns: 1fr 1fr; } }
+.xp-card {
+  display: flex; align-items: center; gap: 14px; text-align: left; width: 100%;
+  min-height: 72px; padding: 14px 16px; border-radius: 16px; border: 2px solid #E5DED2; background: #fff;
+  cursor: pointer; font: inherit; color: inherit;
+}
+.xp-card:hover, .xp-card:focus-visible { border-color: #0D3A26; outline: none; box-shadow: 0 0 0 3px rgba(13,58,38,.15); }
+.xp-card .big { font-size: 30px; line-height: 1; }
+.xp-card strong { display: block; font-size: 17px; }
+.xp-card small { display: block; color: #4B5563; font-size: 13.5px; margin-top: 2px; }
+.xp-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.xp-chip {
+  min-height: 48px; padding: 0 18px; border-radius: 999px; border: 2px solid #E5DED2; background: #fff;
+  font: inherit; font-weight: 700; font-size: 15px; color: #1F2937; cursor: pointer;
+}
+.xp-chip:hover, .xp-chip:focus-visible { border-color: #0D3A26; outline: none; background: #F0FDF4; }
+.xp-lesson { background: #fff; border: 2px solid #A7F3D0; border-radius: 18px; padding: 16px 18px; margin: 0 0 18px; }
+.xp-lesson h3 { margin: 0 0 4px; font-size: 18px; color: #0D3A26; }
+.xp-lesson .tag { margin: 0 0 10px; color: #047857; font-weight: 600; }
+.xp-lesson .body { white-space: pre-line; font-size: 16px; line-height: 1.6; }
+.xp-badge { display: inline-block; font-size: 12px; font-weight: 800; color: #047857; background: #D1FAE5; border-radius: 99px; padding: 3px 10px; margin-bottom: 8px; }
+.xp-station { background: #fff; border: 1px solid #E5DED2; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+.xp-station h4 { margin: 0 0 6px; font-size: 15.5px; color: #0D3A26; }
+.xp-stop {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 10px; margin-top: 4px;
+  background: #F8F5EE; border: 0; border-radius: 10px; font: inherit; font-size: 14.5px; text-align: left; color: #1F2937; cursor: pointer;
+}
+.xp-stop:focus-visible, .xp-stop:hover { background: #ECFDF5; outline: none; }
+.xp-cta {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(250,247,242,.96); border-top: 1px solid #E5DED2; display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.xp-cta[hidden] { display: none; }
+.xp-cta button {
+  width: 100%; max-width: 520px; min-height: 52px; border: 0; border-radius: 14px; background: #0D3A26; color: #fff;
+  font: inherit; font-weight: 800; font-size: 17px; cursor: pointer;
+}
+.xp-cta small { color: #4B5563; font-size: 12.5px; text-align: center; }
+.xp-cta small a { color: #0B6B43; }
+.xp-note { color: #4B5563; font-size: 14px; }
+.xp-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; background: #fff; border-radius: 20px 20px 0 0;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 30px rgba(0,0,0,.18);
+}
+.xp-sheet[hidden] { display: none; }
+.xp-sheet h3 { margin: 0 0 6px; color: #0D3A26; }
+.xp-sheet button.main { width: 100%; min-height: 50px; border: 0; border-radius: 12px; background: #0D3A26; color: #fff; font: inherit; font-weight: 800; font-size: 16px; cursor: pointer; margin-top: 10px; }
+.xp-sheet button.alt { width: 100%; min-height: 44px; border: 0; background: none; color: #0B6B43; font: inherit; font-weight: 700; cursor: pointer; }
+.xp-skeleton { height: 64px; border-radius: 14px; background: #EFE9DD; margin-bottom: 10px; }
+@media (prefers-reduced-motion: no-preference) {
+  .xp-skeleton { animation: xpPulse 1.2s ease-in-out infinite; }
+  @keyframes xpPulse { 0%,100% { opacity: .6 } 50% { opacity: 1 } }
+}

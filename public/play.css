@@ -1,0 +1,82 @@
+/* Progress, Brain Spark, league, celebrations, and accessibility upgrades for the learner app. */
+
+/* ── accessibility: visible keyboard focus everywhere, readable muted text, no motion when asked ── */
+:root { --text-muted: #6B5B4B; }                       /* was too pale on the cream background */
+body.theme-dark { --text-muted: #A8B3C2; }
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+  outline: 3px solid #2563EB; outline-offset: 2px; border-radius: 8px;
+}
+.dock-tab, .main-nav-tab, .brain-mode-pill, .deck-mood-btn { min-height: 44px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
+
+/* ── celebration toast + confetti ── */
+#playToasts { position: fixed; left: 0; right: 0; bottom: 84px; z-index: 100000; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 12px; }
+.play-toast { pointer-events: auto; background: #0D3A26; color: #fff; border-radius: 16px; padding: 10px 16px; font-weight: 700; font-size: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.25); display: flex; gap: 10px; align-items: center; max-width: 420px; }
+.play-toast.big { background: linear-gradient(135deg, #7C3AED, #2563EB); font-size: 17px; padding: 14px 20px; }
+.play-toast small { display: block; font-weight: 500; opacity: .9; font-size: 12.5px; }
+@media (prefers-reduced-motion: no-preference) {
+  .play-toast { animation: playPop .35s ease-out; }
+  .play-confetti span { position: fixed; top: -20px; font-size: 22px; z-index: 100001; pointer-events: none; animation: playFall 2.4s ease-in forwards; }
+  @keyframes playPop { from { transform: translateY(16px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes playFall { to { transform: translateY(105vh) rotate(540deg); opacity: .9; } }
+}
+@media (prefers-reduced-motion: reduce) { .play-confetti { display: none; } }
+
+/* ── cards ── */
+.play-wrap { max-width: 760px; margin: 0 auto; padding: 4px 4px 28px; color: var(--text-primary, #1F2937); text-align: left; }
+.play-card { text-align: left; background: var(--glass-white, #fff); border: 1px solid var(--glass-border, #E5DED2); border-radius: 18px; padding: 16px; margin-bottom: 14px; }
+.play-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--brand-green, #0D3A26); }
+.play-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.play-mute { color: var(--text-muted, #6B5B4B); font-size: 13.5px; }
+.play-btn { min-height: 46px; padding: 0 18px; border: 0; border-radius: 12px; background: #0D3A26; color: #fff; font: inherit; font-weight: 800; font-size: 15px; cursor: pointer; }
+.play-btn.alt { background: transparent; color: #0D3A26; border: 2px solid #0D3A26; }
+body.theme-dark .play-btn { background: #6EE7B7; color: #052e1c; }
+body.theme-dark .play-btn.alt { background: transparent; color: #6EE7B7; border-color: #6EE7B7; }
+.play-bar { height: 12px; border-radius: 99px; background: rgba(0,0,0,.1); overflow: hidden; margin: 8px 0 4px; }
+.play-bar > i { display: block; height: 100%; background: linear-gradient(90deg, #10B981, #2563EB); border-radius: 99px; }
+@media (prefers-reduced-motion: no-preference) { .play-bar > i { transition: width .6s ease; } }
+.play-ring { --p: 0; width: 92px; height: 92px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-direction: column; position: relative; background: conic-gradient(#10B981 calc(var(--p) * 1%), rgba(0,0,0,.12) 0); flex: none; }
+.play-ring::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--glass-white, #fff); }
+.play-ring b, .play-ring small { position: relative; }
+.play-ring b { font-size: 20px; line-height: 1; } .play-ring small { font-size: 11px; color: var(--text-muted, #6B5B4B); }
+.play-badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.play-badge { text-align: center; padding: 10px 6px; border-radius: 14px; border: 1px solid var(--glass-border, #E5DED2); background: var(--glass-white, #fff); }
+.play-badge .i { font-size: 28px; display: block; } .play-badge b { font-size: 12.5px; display: block; } .play-badge small { font-size: 11px; color: var(--text-muted, #6B5B4B); }
+.play-badge.locked { opacity: .55; filter: grayscale(1); }
+
+/* ── Brain Spark ── */
+.spark { border: 2px solid #A7F3D0; background: linear-gradient(135deg, rgba(16,185,129,.08), rgba(37,99,235,.06)); }
+.spark-opt { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; min-height: 48px; padding: 8px 12px; margin: 6px 0; border-radius: 12px; border: 2px solid var(--glass-border, #E5DED2); background: var(--glass-white, #fff); color: inherit; font: inherit; font-size: 15px; cursor: pointer; }
+.spark-opt b { width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,.07); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.spark-opt.right { border-color: #059669; background: rgba(16,185,129,.15); } .spark-opt.wrong { border-color: #DC2626; background: rgba(220,38,38,.1); }
+.spark-dots { display: flex; gap: 6px; margin-bottom: 8px; } .spark-dots i { width: 22px; height: 8px; border-radius: 99px; background: rgba(0,0,0,.15); } .spark-dots i.ok { background: #10B981; } .spark-dots i.no { background: #F59E0B; }
+
+/* ── league ── */
+.play-table { width: 100%; border-collapse: collapse; font-size: 14.5px; } .play-table td { padding: 8px 6px; border-top: 1px solid var(--glass-border, #E5DED2); } .play-table tr.me { font-weight: 800; background: rgba(16,185,129,.12); }
+
+/* ── mastered stops on the roadmap ── */
+.metro-subtopic-stop.mastered .metro-stop-action { color: #059669; font-weight: 800; }
+
+/* ── Lite mode: no animation, blur or heavy decoration (slow networks, low-end phones, data saver) ── */
+html.lite *, html.lite *::before, html.lite *::after {
+  animation: none !important; transition: none !important; scroll-behavior: auto !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important; filter: none !important; text-shadow: none !important;
+}
+html.lite .splash-screen, html.lite .auth-circuit-bg, html.lite .play-confetti { display: none !important; }
+html.lite body { background-image: none !important; }
+html.lite .play-badges .i { font-size: 22px; }
+.play-seg { display: inline-flex; border: 2px solid #0D3A26; border-radius: 12px; overflow: hidden; }
+.play-seg button { min-height: 44px; padding: 0 14px; border: 0; background: transparent; color: #0D3A26; font: inherit; font-weight: 700; cursor: pointer; }
+.play-seg button[aria-pressed="true"] { background: #0D3A26; color: #fff; }
+body.theme-dark .play-seg { border-color: #6EE7B7; } body.theme-dark .play-seg button { color: #6EE7B7; } body.theme-dark .play-seg button[aria-pressed="true"] { background: #6EE7B7; color: #052e1c; }
+
+/* ── Language switch (English / Kiswahili) ── */
+.i18n-switch { display: inline-flex; border: 2px solid #0D3A26; border-radius: 12px; overflow: hidden; }
+.i18n-switch button { min-height: 44px; padding: 0 14px; border: 0; background: transparent; color: #0D3A26; font: inherit; font-weight: 700; cursor: pointer; }
+.i18n-switch button[aria-pressed="true"] { background: #0D3A26; color: #fff; }
+body.theme-dark .i18n-switch { border-color: #6EE7B7; } body.theme-dark .i18n-switch button { color: #6EE7B7; } body.theme-dark .i18n-switch button[aria-pressed="true"] { background: #6EE7B7; color: #052e1c; }
+.xp-bar .i18n-switch { margin-left: auto; margin-right: 8px; } .xp-bar .i18n-switch button { min-height: 36px; padding: 0 10px; font-size: 13px; }
+.xp-bar .i18n-switch { border-color: rgba(255,255,255,.55); } .xp-bar .i18n-switch button { color: #fff; } .xp-bar .i18n-switch button[aria-pressed="true"] { background: #fff; color: #0D3A26; }

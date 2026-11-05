@@ -15,13 +15,13 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./client');
 
-const dataDir = path.resolve(__dirname, '../data');
+const dataDir = require('../dataDir').DATA_DIR;
 
 function loadJson(file, fallback = {}) {
   const p = path.join(dataDir, file);
   if (!fs.existsSync(p)) return fallback;
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    return require('../secureJson').readJson(p, fallback, 'db/delete');
   } catch (e) {
     return fallback;
   }
@@ -29,7 +29,7 @@ function loadJson(file, fallback = {}) {
 
 function saveJson(file, data) {
   const p = path.join(dataDir, file);
-  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
+  require('../secureJson').writeJson(p, data, 'db/delete');
 }
 
 const args = process.argv.slice(2);

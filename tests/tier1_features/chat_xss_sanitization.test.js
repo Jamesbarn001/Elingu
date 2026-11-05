@@ -42,7 +42,7 @@ module.exports = {
     ctx.assertIncludes(sanitized, '&lt;&#x2F;script&gt;');
   },
 
-  'TC-STU-33: Student handle containing HTML tags stored safely and escaped': async (ctx) => {
+  'TC-STU-33: Student handle containing HTML tags is rejected at sign-up': async (ctx) => {
     const maliciousHandle = `<b>Hacked_${Date.now().toString().slice(-4)}</b>`;
     const pin = ctx.uniquePin();
     const email = ctx.uniqueEmail('parent');
@@ -52,10 +52,9 @@ module.exports = {
       body: { handle: maliciousHandle, pin, grade: 7, email }
     });
 
-    ctx.assertEqual(res.status, 200);
-    // When rendered with sanitizeHtml
-    const escaped = authUtils.sanitizeHtml(res.data.student.handle);
-    ctx.assertIncludes(escaped, '&lt;b&gt;');
+    // Markup characters are now refused at the source, so they can never reach any portal, email or export.
+    ctx.assertEqual(res.status, 400);
+    ctx.assertIncludes(res.data.error, 'Nickname');
   },
 
   'TC-STU-34: Image onerror payload in quiz answers is neutralized by sanitizer': async (ctx) => {

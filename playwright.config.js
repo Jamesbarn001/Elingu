@@ -72,10 +72,13 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run start',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  webServer: {
+    command: 'node server.js',
+    // Rate limits are only relaxed when the server itself runs with NODE_ENV=test (the x-elingu-test header no longer does this).
+    env: { NODE_ENV: 'test' },
+    url: 'http://localhost:3000',
+    reuseExistingServer: true,
+    timeout: 30000,
+  },
 });
 

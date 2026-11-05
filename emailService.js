@@ -69,6 +69,15 @@ const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || process.env.GMAIL_U
 const BREVO_SENDER_NAME = process.env.EMAIL_FROM_NAME || 'Elingu';
 
 let brevoCreditsCache = { credits: null, checkedAt: 0 };
+
+// SECURITY: nicknames, subjects and other user-typed text go into HTML emails sent from our domain.
+// Always escape them, otherwise a child's nickname could inject links or markup into mail sent to a parent.
+function esc(value) {
+  return String(value === undefined || value === null ? '' : value).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 async function getBrevoCredits() {
   if (!BREVO_API_KEY) return 0;
   const now = Date.now();
@@ -124,7 +133,11 @@ async function sendViaEmail({ to, subject, html, actionLink = null, description 
   const cleanTo = to.trim().toLowerCase();
 
   // Airtight Test & Simulation Guard: Never hit external providers (Brevo, SMTP, Resend) for tests or mock domains
-  const isTestDomain = /(@example\.com$|\.test$|\.local$|dummy|testfamily|mock|fixture|@resend\.dev$|^parent\d+@|^test\d*@|^diag_)/i.test(cleanTo);
+  // Reserved/test domains are always simulated. Looser keyword patterns (e.g. "mock", "test1@") are only used outside
+  // production, so a real parent whose address happens to contain one of those words still receives their email.
+  const isReservedDomain = /(@example\.com$|\.test$|\.local$|@resend\.dev$)/i.test(cleanTo);
+  const isKeywordTestAddress = process.env.NODE_ENV !== 'production' && /(dummy|testfamily|mock|fixture|^parent\d+@|^test\d*@|^diag_)/i.test(cleanTo);
+  const isTestDomain = isReservedDomain || isKeywordTestAddress;
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.DISABLE_EXTERNAL_EMAIL === 'true';
   if (isTestDomain || isTestEnv) {
     logSimulatedEmail(to, subject, isTestEnv ? 'Test environment (mock dispatch)' : 'Test recipient domain');
@@ -275,7 +288,7 @@ async function sendFirstChildVerificationEmail({ parentEmail, childHandle, verif
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Activate ${childHandle}'s Elingu Account</title>
+  <title>Activate ${esc(childHandle)}'s Elingu Account</title>
 </head>
 <body style="margin: 0; padding: 20px 0; background-color: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
   <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #F1F5F9;">
@@ -304,7 +317,7 @@ async function sendFirstChildVerificationEmail({ parentEmail, childHandle, verif
                 Your child wants to join Elingu! 🎉
               </h2>
               <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
-                <strong style="color: #0D3A26; font-size: 16px;">${childHandle}</strong> has registered on Elingu — Kenya's Socratic AI learning companion for CBE students.
+                <strong style="color: #0D3A26; font-size: 16px;">${esc(childHandle)}</strong> has registered on Elingu — Kenya's Socratic AI learning companion for CBE students.
               </p>
               <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
                 To activate their account, click the button below. You'll set a 6-digit <strong style="color: #0F172A;">Family PIN</strong> to manage and approve accounts for all your children.
@@ -318,7 +331,7 @@ async function sendFirstChildVerificationEmail({ parentEmail, childHandle, verif
                       <tr>
                         <td align="center" style="border-radius: 10px; background-color: #00C896; background: linear-gradient(135deg, #00C896 0%, #0D3A26 100%);">
                           <a href="${link}" target="_blank" style="display: inline-block; padding: 15px 34px; font-size: 15px; font-weight: 700; color: #FFFFFF; text-decoration: none; border-radius: 10px; letter-spacing: 0.2px;">
-                            Activate ${childHandle}'s Account 🚀
+                            Activate ${esc(childHandle)}'s Account 🚀
                           </a>
                         </td>
                       </tr>
@@ -341,7 +354,7 @@ async function sendFirstChildVerificationEmail({ parentEmail, childHandle, verif
                 👨‍👩‍👦 Access your family dashboard anytime via the <a href="${BASE_URL}/parent/portal?email=${encodeURIComponent(parentEmail)}" style="color: #0D3A26; font-weight: 700; text-decoration: underline;">Parent Portal</a>
               </p>
               <p style="color: #64748B; font-size: 12px; margin: 0 0 6px 0;">
-                🛡️ <strong>Child Safety First:</strong> Fully compliant with Kenya Data Protection Act 2019
+                🛡️ <strong>Child Safety First:</strong> Your child's account stays locked until you approve it. Read our <a href="${BASE_URL}/privacy" style="color:inherit">privacy notice</a>.
               </p>
               <p style="color: #94A3B8; font-size: 11px; margin: 0;">
                 Elingu · Nairobi, Kenya · <a href="${BASE_URL}" style="color: #00C896; text-decoration: none;">elingu.app</a>
@@ -376,7 +389,7 @@ async function sendChildApprovalEmail({ parentEmail, childHandle, approveToken, 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Approve ${childHandle} on Elingu</title>
+  <title>Approve ${esc(childHandle)} on Elingu</title>
 </head>
 <body style="margin: 0; padding: 20px 0; background-color: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
   <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #F1F5F9;">
@@ -402,10 +415,10 @@ async function sendChildApprovalEmail({ parentEmail, childHandle, approveToken, 
           <tr>
             <td style="padding: 36px 36px 28px 36px;">
               <h2 style="color: #0F172A; font-size: 20px; font-weight: 700; margin: 0 0 16px 0; line-height: 1.3;">
-                Does ${childHandle} belong to your family? 👤
+                Does ${esc(childHandle)} belong to your family? 👤
               </h2>
               <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
-                A learner with the nickname <strong style="color: #0D3A26; font-size: 16px;">${childHandle}</strong> has registered on Elingu using your email address.
+                A learner with the nickname <strong style="color: #0D3A26; font-size: 16px;">${esc(childHandle)}</strong> has registered on Elingu using your email address.
               </p>
               <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
                 <strong style="color: #0F172A;">Do you recognise this child?</strong> If yes, click the button below and enter your 6-digit Family PIN to approve their account. If you don't know who this is, simply ignore this message.
@@ -419,7 +432,7 @@ async function sendChildApprovalEmail({ parentEmail, childHandle, approveToken, 
                       <tr>
                         <td align="center" style="border-radius: 10px; background-color: #00C896; background: linear-gradient(135deg, #00C896 0%, #0D3A26 100%);">
                           <a href="${link}" target="_blank" style="display: inline-block; padding: 15px 34px; font-size: 15px; font-weight: 700; color: #FFFFFF; text-decoration: none; border-radius: 10px; letter-spacing: 0.2px;">
-                            Approve ${childHandle} 👤
+                            Approve ${esc(childHandle)} 👤
                           </a>
                         </td>
                       </tr>
@@ -442,7 +455,7 @@ async function sendChildApprovalEmail({ parentEmail, childHandle, approveToken, 
                 👨‍👩‍👦 Access your family dashboard anytime via the <a href="${BASE_URL}/parent/portal?email=${encodeURIComponent(parentEmail)}" style="color: #0D3A26; font-weight: 700; text-decoration: underline;">Parent Portal</a>
               </p>
               <p style="color: #64748B; font-size: 12px; margin: 0 0 6px 0;">
-                🛡️ <strong>Child Safety First:</strong> Fully compliant with Kenya Data Protection Act 2019
+                🛡️ <strong>Child Safety First:</strong> Your child's account stays locked until you approve it. Read our <a href="${BASE_URL}/privacy" style="color:inherit">privacy notice</a>.
               </p>
               <p style="color: #94A3B8; font-size: 11px; margin: 0;">
                 Elingu · Nairobi, Kenya · <a href="${BASE_URL}" style="color: #00C896; text-decoration: none;">elingu.app</a>
@@ -504,7 +517,7 @@ async function sendOTPEmail({ parentEmail, otpCode, purpose = 'reset your Family
                 Your Verification Code 🔑
               </h2>
               <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
-                You requested a code to <strong style="color: #0D3A26;">${purpose}</strong>. Enter this code in the Elingu Parent Portal:
+                You requested a code to <strong style="color: #0D3A26;">${esc(purpose)}</strong>. Enter this code in the Elingu Parent Portal:
               </p>
 
               <!-- OTP Code Box -->
@@ -537,7 +550,7 @@ async function sendOTPEmail({ parentEmail, otpCode, purpose = 'reset your Family
           <tr>
             <td style="background-color: #F8FAFC; padding: 20px 36px; border-bottom-left-radius: 15px; border-bottom-right-radius: 15px; border-top: 1px solid #E2E8F0; text-align: center;">
               <p style="color: #64748B; font-size: 12px; margin: 0 0 6px 0;">
-                🛡️ <strong>Child Safety First:</strong> Fully compliant with Kenya Data Protection Act 2019
+                🛡️ <strong>Child Safety First:</strong> Your child's account stays locked until you approve it. Read our <a href="${BASE_URL}/privacy" style="color:inherit">privacy notice</a>.
               </p>
               <p style="color: #94A3B8; font-size: 11px; margin: 0;">
                 Elingu · Nairobi, Kenya · <a href="${BASE_URL}" style="color: #00C896; text-decoration: none;">elingu.app</a>
@@ -586,7 +599,7 @@ async function sendStudentOTPEmail({ recipientEmail, studentHandle, otpCode }) {
           <tr>
             <td style="padding: 32px;">
               <h2 style="color: #0F172A; font-size: 19px; font-weight: 700; margin: 0 0 12px 0;">
-                Habari ${studentHandle}! 🔑
+                Habari ${esc(studentHandle)}! 🔑
               </h2>
               <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
                 Here is your 6-digit code to reset your 4-digit Elingu PIN:
@@ -604,7 +617,7 @@ async function sendStudentOTPEmail({ recipientEmail, studentHandle, otpCode }) {
           </tr>
           <tr>
             <td style="background-color: #F8FAFC; padding: 16px 32px; border-bottom-left-radius: 15px; border-bottom-right-radius: 15px; border-top: 1px solid #E2E8F0; text-align: center;">
-              <p style="color: #94A3B8; font-size: 11px; margin: 0;">Elingu · Nairobi, Kenya · KDPA 2019 Protected</p>
+              <p style="color: #94A3B8; font-size: 11px; margin: 0;">Elingu · Nairobi, Kenya · <a href="${BASE_URL}/privacy" style="color:#94A3B8">Privacy notice</a></p>
             </td>
           </tr>
         </table>
@@ -652,7 +665,7 @@ async function sendParentPinChangedAlert({ parentEmail, childHandle }) {
                 Your child's PIN was updated
               </h2>
               <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
-                This is a confirmation that <strong>${childHandle}</strong> has successfully reset their 4-digit Elingu PIN on ${new Date().toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}.
+                This is a confirmation that <strong>${esc(childHandle)}</strong> has successfully reset their 4-digit Elingu PIN on ${new Date().toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}.
               </p>
               <div style="background-color: #F0FDF4; border: 1px solid #86EFAC; border-radius: 10px; padding: 14px 16px; margin: 20px 0;">
                 <p style="color: #166534; font-size: 13.5px; margin: 0; font-weight: 600;">
@@ -666,7 +679,7 @@ async function sendParentPinChangedAlert({ parentEmail, childHandle }) {
           </tr>
           <tr>
             <td style="background-color: #F8FAFC; padding: 16px 32px; border-bottom-left-radius: 15px; border-bottom-right-radius: 15px; border-top: 1px solid #E2E8F0; text-align: center;">
-              <p style="color: #94A3B8; font-size: 11px; margin: 0;">Elingu · Nairobi, Kenya · KDPA 2019 Protected</p>
+              <p style="color: #94A3B8; font-size: 11px; margin: 0;">Elingu · Nairobi, Kenya · <a href="${BASE_URL}/privacy" style="color:#94A3B8">Privacy notice</a></p>
             </td>
           </tr>
         </table>
@@ -706,7 +719,7 @@ async function sendParentUpgradeRequestEmail({ parentEmail, childHandle, request
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${childHandle} requested to unlock ${subjectName}</title>
+  <title>${esc(childHandle)} requested to unlock ${esc(subjectName)}</title>
 </head>
 <body style="margin: 0; padding: 20px 0; background-color: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
   <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #F1F5F9;">
@@ -723,18 +736,18 @@ async function sendParentUpgradeRequestEmail({ parentEmail, childHandle, request
           <tr>
             <td style="padding: 36px 36px 28px 36px;">
               <h2 style="color: #0F172A; font-size: 20px; font-weight: 700; margin: 0 0 16px 0; line-height: 1.3;">
-                ${childHandle} wants to explore more subjects! 🚀
+                ${esc(childHandle)} wants to explore more subjects! 🚀
               </h2>
               <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
-                Your learner <strong style="color: #0D3A26; font-size: 16px;">${childHandle}</strong> requested to unlock <strong>${subjectName}</strong>${pathwayText} on Elingu.
+                Your learner <strong style="color: #0D3A26; font-size: 16px;">${esc(childHandle)}</strong> requested to unlock <strong>${esc(subjectName)}</strong>${esc(pathwayText)} on Elingu.
               </p>
               <div style="background-color: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 16px 20px; margin: 20px 0;">
                 <p style="margin: 0; color: #166534; font-size: 14px; line-height: 1.5;">
-                  💡 <strong>Did you know?</strong> With Elingu Premium, ${childHandle} gets unlimited access to all CBE subjects, interactive STEM labs, and personalized Socratic revision turns.
+                  💡 <strong>Did you know?</strong> With Elingu Premium, ${esc(childHandle)} gets unlimited access to all CBE subjects, interactive STEM labs, and personalized Socratic revision turns.
                 </p>
               </div>
               <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
-                You can review your plan and unlock all subjects for ${childHandle} securely via M-PESA anytime from your Parent Portal:
+                You can review your plan and unlock all subjects for ${esc(childHandle)} securely via M-PESA anytime from your Parent Portal:
               </p>
               <table border="0" cellpadding="0" cellspacing="0" width="100%">
                 <tr>
@@ -746,13 +759,13 @@ async function sendParentUpgradeRequestEmail({ parentEmail, childHandle, request
                 </tr>
               </table>
               <p style="color: #94A3B8; font-size: 12px; line-height: 1.5; margin: 24px 0 0 0; text-align: center;">
-                No immediate action required. ${childHandle} can continue learning with their chosen free subjects!
+                No immediate action required. ${esc(childHandle)} can continue learning with their chosen free subjects!
               </p>
             </td>
           </tr>
           <tr>
             <td style="background-color: #F8FAFC; padding: 16px 32px; border-bottom-left-radius: 15px; border-bottom-right-radius: 15px; border-top: 1px solid #E2E8F0; text-align: center;">
-              <p style="color: #94A3B8; font-size: 11px; margin: 0;">Elingu · Nairobi, Kenya · KDPA 2019 Protected</p>
+              <p style="color: #94A3B8; font-size: 11px; margin: 0;">Elingu · Nairobi, Kenya · <a href="${BASE_URL}/privacy" style="color:#94A3B8">Privacy notice</a></p>
             </td>
           </tr>
         </table>
@@ -793,6 +806,7 @@ function hasSmtpTransporter() {
 }
 
 module.exports = {
+  sendViaEmail,
   getActiveProvider,
   verifySmtp,
   hasSmtpTransporter,

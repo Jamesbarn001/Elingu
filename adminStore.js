@@ -10,7 +10,7 @@ const path = require('path');
 const crypto = require('crypto');
 const authUtils = require('./authUtils');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const { DATA_DIR } = require('./dataDir');
 const ADMIN_FILE = path.join(DATA_DIR, 'admin.json');
 const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
 const TEACHERS_FILE = path.join(DATA_DIR, 'teachers.json');
@@ -106,22 +106,15 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// All reads/writes of data/*.json go through secureJson: personal-data fields are encrypted at rest
+// (see cryptoVault.js) and decrypted again on read, so the rest of this file works with plain values.
 function loadJson(filePath, defaultValue = {}) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error(`[adminStore] Error loading ${filePath}:`, err.message);
-  }
-  return defaultValue;
+  return require('./secureJson').readJson(filePath, defaultValue, 'adminStore');
 }
 
 function saveJson(filePath, data) {
   try {
-    authUtils.atomicWriteJsonSync(filePath, data);
-    require('./persistentStore').persist(filePath, data);
+    require('./secureJson').writeJson(filePath, data, 'adminStore');
   } catch (err) {
     console.error(`[adminStore] Error saving ${filePath}:`, err.message);
   }

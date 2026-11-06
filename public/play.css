@@ -80,3 +80,9 @@ body.theme-dark .play-seg { border-color: #6EE7B7; } body.theme-dark .play-seg b
 body.theme-dark .i18n-switch { border-color: #6EE7B7; } body.theme-dark .i18n-switch button { color: #6EE7B7; } body.theme-dark .i18n-switch button[aria-pressed="true"] { background: #6EE7B7; color: #052e1c; }
 .xp-bar .i18n-switch { margin-left: auto; margin-right: 8px; } .xp-bar .i18n-switch button { min-height: 36px; padding: 0 10px; font-size: 13px; }
 .xp-bar .i18n-switch { border-color: rgba(255,255,255,.55); } .xp-bar .i18n-switch button { color: #fff; } .xp-bar .i18n-switch button[aria-pressed="true"] { background: #fff; color: #0D3A26; }
+
+/* ── Make it yours: skippable questions after the short sign-up ── */
+#playSetup { position: fixed; left: 0; right: 0; bottom: 0; z-index: 100001; display: flex; justify-content: center; padding: 12px; pointer-events: none; }
+.play-setup-card { pointer-events: auto; width: 100%; max-width: 440px; background: var(--glass-white, #fff); border: 1px solid var(--glass-border, #E5DED2); border-radius: 18px; padding: 16px; box-shadow: 0 -8px 28px rgba(0,0,0,.18); }
+.play-setup-card select, .play-setup-card input { width: 100%; min-height: 46px; padding: 0 12px; border-radius: 12px; border: 2px solid var(--glass-border, #E5DED2); font: inherit; background: #fff; color: #1F2937; }
+html.lite .play-setup-card { box-shadow: none; }

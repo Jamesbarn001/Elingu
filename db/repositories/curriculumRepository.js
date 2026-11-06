@@ -440,7 +440,34 @@ async function getCatalogue(curriculum = 'CBC', grade = null) {
   return { curriculum: normCurr, grades, subjects };
 }
 
+/**
+ * Bring the database's curriculum up to date with the built-in content (db/seeds).
+ * The old rule only seeded when the tables were EMPTY, so a database seeded once with a smaller curriculum never received
+ * the topics added later. Now a fingerprint of the built-in content is stored; when it changes, the seeder runs again.
+ * The seeder only inserts or updates rows by id (nothing is deleted), so learner progress, saved spaces and mastery are safe.
+ */
+async function ensureSeedCurrent() {
+  const crypto = require('crypto');
+  const { ALL_CURRICULUM_SEEDS } = require('../seeds');
+  const hash = crypto.createHash('sha256').update(JSON.stringify(ALL_CURRICULUM_SEEDS) + '|seed-v1').digest('hex');
+  await db.initSchema();
+  let stored = null;
+  try {
+    const r = await db.query('SELECT content_hash FROM curriculum_seed_state WHERE id = $1', ['curriculum']);
+    stored = r.rows[0] ? r.rows[0].content_hash : null;
+  } catch (e) { /* table not there yet: seed below */ }
+  if (stored === hash) return { seeded: false };
+  const { seed } = require('../seed_curriculum');
+  const result = await seed();
+  await db.query(
+    'INSERT INTO curriculum_seed_state (id, content_hash, seeded_at) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET content_hash = EXCLUDED.content_hash, seeded_at = EXCLUDED.seeded_at',
+    ['curriculum', hash, new Date().toISOString()]
+  );
+  return Object.assign({ seeded: true }, result);
+}
+
 module.exports = {
+  ensureSeedCurrent,
   getCatalogue,
   getCurriculumMap,
   getSubtopicById,

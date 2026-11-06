@@ -20,7 +20,7 @@
   var KEY = 'elingu_lang';
   var LANGS = { en: 'English', sw: 'Kiswahili' };
   var ATTRS = ['aria-label', 'title', 'placeholder', 'alt'];
-  var SCOPE = '#exploreOverlay, #playMe, #playToasts, #playSparkMount, #revisionStudioMount, #exLive, #mobileBottomDock, #figmaAuthOverlay, body[data-i18n-scope], .main-nav-tab, .header-stat-chip, #headerSubtitle, header h1, [data-i18n-scope]';
+  var SCOPE = '#exploreOverlay, #playSetup, #playMe, #playToasts, #playSparkMount, #revisionStudioMount, #exLive, #mobileBottomDock, #figmaAuthOverlay, body[data-i18n-scope], .main-nav-tab, .header-stat-chip, #headerSubtitle, #sidebarSubjectsTitle, #deckChevron, header h1, [data-i18n-scope]';
 
   // ───────────────────────── the Kiswahili list ─────────────────────────
   var SW = {
@@ -35,6 +35,26 @@
     'Level {a}, {b} XP': 'Kiwango {a}, XP {b}',
     'Level {a} {b} · {c} XP. You earn XP for real learning.': 'Kiwango {a} {b} · XP {c}. Unapata XP kwa kujifunza kwa kweli.',
     'Language': 'Lugha',
+    'My Subjects': 'Masomo Yangu', 'Show or hide my subjects': 'Onyesha au ficha masomo yangu',
+
+    // short sign-up, waiting-for-parent preview, "make it yours"
+    'Start learning →': 'Anza kujifunza →', 'Three quick things, then you start learning.': 'Mambo matatu mafupi, kisha unaanza kujifunza.',
+    '1. Choose a nickname': '1. Chagua jina la utani', '2. Choose a 4-digit PIN': '2. Chagua PIN ya tarakimu 4',
+    '3. Parent or guardian email or mobile': '3. Barua pepe au simu ya mzazi au mlezi', 'Suggest a nickname': 'Nipendekezee jina la utani',
+    'Waiting for your parent to say yes': 'Tunasubiri mzazi wako akubali',
+    'Hi {a}! Your parent or guardian has been sent a message. Remind them, and look around while you wait.': 'Habari {a}! Mzazi au mlezi wako ametumiwa ujumbe. Mkumbushe, na tazama tazama huku ukisubiri.',
+    'Send my parent the link on WhatsApp': 'Mtumie mzazi wangu kiungo kwa WhatsApp', 'Send it by SMS': 'Tuma kwa SMS',
+    'Send the message again': 'Tuma ujumbe tena', 'Sent. Check again in a minute': 'Imetumwa. Angalia tena baada ya dakika moja',
+    'Open now': 'Wazi sasa', 'Read the roadmap and lessons': 'Soma ramani na masomo',
+    'Unlocks when your parent says yes': 'Hufunguka mzazi wako akikubali',
+    'Ask the tutor': 'Muulize mwalimu', 'Practice papers': 'Mitihani ya mazoezi', 'Save my progress and XP': 'Hifadhi maendeleo na XP yangu', 'All other subjects': 'Masomo mengine yote',
+    '← Back to the approval screen': '← Rudi kwenye skrini ya idhini',
+    'Read-only preview. Your tutor and practice unlock when your parent says yes.': 'Hakiki ya kusoma tu. Mwalimu wako na mazoezi hufunguka mzazi wako akikubali.',
+    'PREVIEW': 'HAKIKI', 'We are still building this subject.': 'Bado tunaunda somo hili.', 'This lesson is not ready yet.': 'Somo hili bado halijawa tayari.',
+    'Your tutor can talk this through with you as soon as your parent says yes.': 'Mwalimu wako atazungumza nawe kuhusu hili mara mzazi wako akikubali.',
+    'Make it yours': 'Fanya iwe yako', 'Which county are you in?': 'Uko kaunti gani?', 'So examples can use places you know.': 'Ili mifano itumie sehemu unazozijua.',
+    'Did your teacher give you a class code?': 'Mwalimu wako alikupa msimbo wa darasa?', 'It links your learning to your class. You can skip this.': 'Unaunganisha masomo yako na darasa lako. Unaweza kuruka hili.',
+    'Skip': 'Ruka', 'Done': 'Nimemaliza', 'That code did not work. Check it, or skip.': 'Msimbo huo haukufanya kazi. Uangalie, au uruke.',
 
     // explore (first screen, no account)
     'Explore Elingu': 'Gundua Elingu', 'I have an account': 'Nina akaunti',

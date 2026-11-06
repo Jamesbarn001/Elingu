@@ -9,7 +9,7 @@
 //  • The AI tutor, practice-exam marking and the Brain Spark need the internet by design (answers are marked on the
 //    server), so those requests are not touched here.
 
-const CACHE_NAME = 'elingu-cache-v11-lang';          // app shell: bump whenever public assets change (rule 8)
+const CACHE_NAME = 'elingu-cache-v13-signup';          // app shell: bump whenever public assets change (rule 8)
 const LESSON_CACHE = 'elingu-lessons-v1';           // saved lessons: kept across app updates
 const STATIC_ASSETS = [
   '/',

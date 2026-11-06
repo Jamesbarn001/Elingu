@@ -5,6 +5,9 @@
 // Exit codes: 0 = All Passed, 1 = Any Failure.
 // ============================================================
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+require('../helpers/isolatedData');   // tests use their own throw-away data folder, never the real data/
+
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');

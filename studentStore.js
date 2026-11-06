@@ -467,7 +467,7 @@ function isHandleOrEmailTaken(handle, email) {
   };
 }
 
-function createStudent({ fullName, realName, handle, email, studentEmail, studentPhone, parentPhone, grade, county, avatar, pin, age, school, quests, freeSubjects, pilotCode, parentConsent, schoolId, stream, streamJoinCode, pathway, selectedSubjects, curriculum, examBoard, examTier, yearGroup, schoolLevel }) {
+function createStudent({ exploredSubject, quickSignup, fullName, realName, handle, email, studentEmail, studentPhone, parentPhone, grade, county, avatar, pin, age, school, quests, freeSubjects, pilotCode, parentConsent, schoolId, stream, streamJoinCode, pathway, selectedSubjects, curriculum, examBoard, examTier, yearGroup, schoolLevel }) {
   const store = loadJson(STUDENTS_FILE, { students: [] });
   const cleanRealName = authUtils.cleanDisplayText(fullName || realName || '', 60) || null;
   const nickCheck = authUtils.validateNickname(handle || cleanRealName || 'Mwanafunzi');
@@ -549,6 +549,11 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
     cleanSelectedSubjects = ['Core Mathematics', 'English', 'Kiswahili', 'Community Service Learning'];
   } else {
     cleanSelectedSubjects = ['Mathematics', 'English', 'Kiswahili', 'Integrated Science', 'Social Studies'];
+  }
+
+  // A subject the visitor looked at on the explore screen is always part of their subjects.
+  if (exploredSubject && ALL_VALID_SUBJECTS.includes(exploredSubject) && !cleanSelectedSubjects.includes(exploredSubject)) {
+    cleanSelectedSubjects.unshift(exploredSubject);
   }
 
   // If a stream join code was provided during signup, strictly validate against schools & streams
@@ -638,6 +643,8 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
     pilotActivatedAt: pilotData ? pilotData.activatedAt : null,
     pilotExpiresAt: pilotData ? pilotData.expiresAt : null,
     subscriptionTier: resolvedSchoolId ? 'school' : (pilotData ? 'pilot' : 'free'),
+    // The short sign-up skips county, school and the rest; the app asks for them one at a time after the parent approves.
+    needsProfileSetup: !!quickSignup,
     // DPA 2019 s.32/33: the controller must be able to PROVE a parent or guardian consented. A tick-box typed by the
     // child is not proof, so parentConsent starts false and is only set (with a full record in `consent`) when the
     // parent confirms through their own link. What the child said at sign-up is kept separately as an attestation.
@@ -739,6 +746,7 @@ function createStudent({ fullName, realName, handle, email, studentEmail, studen
     examBoard: newStudent.examBoard,
     examTier: newStudent.examTier,
     yearGroup: newStudent.yearGroup,
+    needsProfileSetup: newStudent.needsProfileSetup === true,
     pathway: newStudent.pathway,
     selectedSubjects: newStudent.selectedSubjects,
     freeSubjects: newStudent.freeSubjects,
@@ -957,6 +965,7 @@ async function authenticateStudent(handleOrEmail, pin) {
     examBoard: student.examBoard || (isBri ? 'CAIE' : null),
     examTier: student.examTier || null,
     yearGroup: student.yearGroup || (isBri ? student.grade : null),
+    needsProfileSetup: student.needsProfileSetup === true,
     pathway: isBri ? null : (student.pathway || (student.grade >= 10 ? 'STEM' : null)),
     selectedSubjects: student.selectedSubjects || student.quests || [],
     freeSubjects: student.freeSubjects || (student.quests ? student.quests.slice(0, 3) : ['Mathematics', 'English']),
@@ -973,10 +982,11 @@ async function authenticateStudent(handleOrEmail, pin) {
   };
 }
 
-function updateStudentProfile(id, { grade, county, age, school, avatar, handle, email, studentEmail, studentPhone, quests, freeSubjects, schoolLevel, pathway, selectedSubjects, points, curriculum, examBoard, examTier, yearGroup, adminOverride = false }) {
+function updateStudentProfile(id, { profileSetupDone, grade, county, age, school, avatar, handle, email, studentEmail, studentPhone, quests, freeSubjects, schoolLevel, pathway, selectedSubjects, points, curriculum, examBoard, examTier, yearGroup, adminOverride = false }) {
   const store = loadJson(STUDENTS_FILE, { students: [] });
   const student = store.students.find(s => s.id === id);
   if (!student) return null;
+  if (profileSetupDone === true) student.needsProfileSetup = false;
 
   if (curriculum !== undefined) {
     const isBriInput = isBritishCurriculum({ curriculum, schoolLevel, examBoard });

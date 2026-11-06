@@ -6,6 +6,7 @@
 // ============================================================
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+require('./helpers/isolatedData');   // tests use their own throw-away data folder, never the real data/
 
 const fs = require('fs');
 const path = require('path');
@@ -77,7 +78,7 @@ async function startServerIfNeeded(port) {
 
   // Wait for health check
   const start = Date.now();
-  const timeoutMs = 25000;
+  const timeoutMs = 90000;
   while (Date.now() - start < timeoutMs) {
     if (await isServerRunning(port)) {
       console.log(`✅ Server is healthy and listening on port ${port} (${Date.now() - start}ms)`);

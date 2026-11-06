@@ -242,7 +242,97 @@
     }
   });
 
+  // ── "Make it yours": a few skippable questions, asked one at a time after a learner who used the short sign-up is approved ──
+  var COUNTIES = ['Nairobi', 'Mombasa', 'Kwale', 'Kilifi', 'Tana River', 'Lamu', 'Taita Taveta', 'Garissa', 'Wajir', 'Mandera', 'Marsabit', 'Isiolo', 'Meru', 'Tharaka-Nithi', 'Embu', 'Kitui', 'Machakos', 'Makueni', 'Nyandarua', 'Nyeri', 'Kirinyaga', "Murang'a", 'Kiambu', 'Turkana', 'West Pokot', 'Samburu', 'Trans Nzoia', 'Uasin Gishu', 'Elgeyo Marakwet', 'Nandi', 'Baringo', 'Laikipia', 'Nakuru', 'Narok', 'Kajiado', 'Kericho', 'Bomet', 'Kakamega', 'Vihiga', 'Bungoma', 'Busia', 'Siaya', 'Kisumu', 'Homa Bay', 'Migori', 'Kisii', 'Nyamira'];
+  var setup = { open: false, step: 0, county: null };
+  function currentStudent() { return (typeof activeStudent !== 'undefined' && activeStudent) ? activeStudent : null; }
+  function setupNeeded() {
+    var s = currentStudent();
+    var overlay = document.getElementById('figmaAuthOverlay');
+    var authShown = overlay && getComputedStyle(overlay).display !== 'none';
+    return !!(s && s.needsProfileSetup === true && signedIn() && !authShown && !setup.open);
+  }
+  function setupSteps(s) {
+    var steps = [];
+    if (!(s.curriculum === 'BRITISH' || s.schoolLevel === 'IGCSE' || s.schoolLevel === 'CHECKPOINT')) {
+      steps.push({ id: 'county', q: 'Which county are you in?', why: 'So examples can use places you know.' });
+      steps.push({ id: 'code', q: 'Did your teacher give you a class code?', why: 'It links your learning to your class. You can skip this.' });
+    }
+    return steps;
+  }
+  function closeSetup() { var b = document.getElementById('playSetup'); if (b) b.remove(); setup.open = false; }
+  function finishSetup(s, extra) {
+    var body = Object.assign({ studentId: s.id, profileSetupDone: true }, extra || {});
+    api('PUT', '/api/students/profile', body).then(function (r) {
+      if (r && r.success && r.student) {
+        try { Object.assign(s, { needsProfileSetup: false, county: r.student.county || s.county }); localStorage.setItem('elingu_active_student', JSON.stringify(s)); } catch (e) {}
+      } else { s.needsProfileSetup = false; }
+    }).catch(function () { s.needsProfileSetup = false; });
+    closeSetup();
+  }
+  function renderSetup() {
+    var s = currentStudent(); if (!s) return closeSetup();
+    var steps = setupSteps(s);
+    if (setup.step >= steps.length) { finishSetup(s, setup.county ? { county: setup.county } : null); return; }
+    var st = steps[setup.step], box = document.getElementById('playSetup');
+    if (!box) { box = document.createElement('div'); box.id = 'playSetup'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'Make it yours'); document.body.appendChild(box); }
+    var field = st.id === 'county'
+      ? '<select id="playSetupField" aria-label="County">' + COUNTIES.map(function (c) { return '<option' + (c === (s.county || 'Nairobi') ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>'
+      : '<input id="playSetupField" type="text" maxlength="20" placeholder="e.g. KUJ-8E" autocapitalize="characters" aria-label="Class code">';
+    box.innerHTML = '<div class="play-setup-card"><div class="play-mute">Make it yours · ' + (setup.step + 1) + ' of ' + steps.length + '</div>' +
+      '<div class="play-bar" aria-hidden="true"><i style="width:' + Math.round((setup.step + 1) / steps.length * 100) + '%"></i></div>' +
+      '<h3 style="margin:8px 0 2px">' + esc(st.q) + '</h3><p class="play-mute" style="margin:0 0 10px">' + esc(st.why) + '</p>' + field +
+      '<div id="playSetupMsg" class="play-mute" role="status"></div>' +
+      '<div class="play-row" style="margin-top:12px"><button class="play-btn alt" type="button" data-su="skip">Skip</button><button class="play-btn" type="button" data-su="next">' + (setup.step + 1 === steps.length ? 'Done' : 'Next') + '</button></div></div>';
+    box.onclick = function (e) {
+      var b = e.target.closest('[data-su]'); if (!b) return;
+      var v = (document.getElementById('playSetupField') || {}).value || '';
+      var advance = function () { setup.step++; renderSetup(); };
+      if (b.getAttribute('data-su') === 'skip') { advance(); return; }
+      if (st.id === 'county') { setup.county = v; advance(); return; }
+      if (!v.trim()) { advance(); return; }
+      api('POST', '/api/students/join-stream', { studentId: s.id, joinCode: v.trim().toUpperCase() }).then(function (r) {
+        if (r && r.success) advance();
+        else { var m = document.getElementById('playSetupMsg'); if (m) m.textContent = (r && r.error) || 'That code did not work. Check it, or skip.'; }
+      });
+    };
+  }
+  function maybeProfileSetup() {
+    if (!setupNeeded()) return;
+    setup.open = true; setup.step = 0; setup.county = null;
+    renderSetup();
+  }
+
+  // ── My Subjects dropdown under Brain Deck (remembers whether it was open) ──
+  var Sidebar = (function () {
+    var KEY = 'elingu_subjects_open';
+    function nav() { return document.querySelector('.sidebar-nav'); }
+    function isOpen() { var n = nav(); return !!n && !n.classList.contains('subjects-collapsed'); }
+    function apply(open, remember) {
+      var n = nav(); if (!n) return;
+      n.classList.toggle('subjects-collapsed', !open);
+      var b = document.getElementById('deckChevron'); if (b) b.setAttribute('aria-expanded', String(open));
+      var t = document.getElementById('sidebarSubjectsTitle'); if (t) t.setAttribute('aria-expanded', String(open));
+      if (remember) { try { localStorage.setItem(KEY, open ? '1' : '0'); } catch (e) {} }
+    }
+    function init() {
+      var saved = null; try { saved = localStorage.getItem(KEY); } catch (e) {}
+      apply(saved !== '0', false);
+      var chev = document.getElementById('deckChevron');
+      if (chev) chev.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); apply(!isOpen(), true); });
+      var title = document.getElementById('sidebarSubjectsTitle');
+      if (title) {
+        title.addEventListener('click', function () { apply(!isOpen(), true); });
+        title.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply(!isOpen(), true); } });
+      }
+    }
+    return { init: init, openSubjects: function () { apply(true, true); }, isOpen: isOpen };
+  })();
+  window.ElinguSidebar = Sidebar;
+
   function init() {
+    Sidebar.init();
+    setInterval(maybeProfileSetup, 6000);   // cheap check: only does anything for a learner who still has the "make it yours" questions to answer
     var log = document.getElementById('log');
     if (log) { log.setAttribute('role', 'log'); log.setAttribute('aria-live', 'polite'); log.setAttribute('aria-relevant', 'additions'); }
     makeFocusable(document);

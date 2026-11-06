@@ -148,6 +148,7 @@
     hide();
     try { if (typeof dismissSplashScreen === 'function') dismissSplashScreen(); } catch (e) {}
     try { if (typeof setAuthTab === 'function') setAuthTab(tab); } catch (e) {}
+    try { if (window.applyQuickSignUpLook) window.applyQuickSignUpLook(); } catch (e) {}
     if (tab === 'signup') {
       try { if (state.curriculum && typeof selectSignUpCurriculum === 'function') selectSignUpCurriculum(state.curriculum); } catch (e) {}
     } else {
@@ -158,6 +159,7 @@
   function onClick(e) {
     var t = e.target.closest('button');
     if (!t || !root.contains(t)) return;
+    if (taste && onTasteClick(e)) return;
     if (t.dataset.curr) { state.curriculum = t.dataset.curr; chooseLevel(); return; }
     if (t.dataset.grade) { state.grade = t.dataset.grade; chooseSubject(); return; }
     if (t.dataset.subject) { state.subject = t.dataset.subject; showRoadmap(); return; }
@@ -202,13 +204,137 @@
 
   function show() {
     if (!root) build();
+    root.classList.remove('taste');
     root.hidden = false;
     document.documentElement.style.overflow = 'hidden';
     try { if (typeof dismissSplashScreen === 'function') dismissSplashScreen(); } catch (e) {}
     if (state.step === 'curriculum' || !state.curriculum) chooseCurriculum();
   }
 
-  window.ElinguExplore = { show: show, hide: hide };
+  // ───────────────────────── taste mode: a small, read-only look at the app while a parent decides ─────────────────────────
+  // Two subjects, public lessons only. Nothing is saved, nothing is sent to the AI tutor, and no progress is recorded: the
+  // parent has not agreed yet. The screen checks every few seconds and hands over to the real app the moment the parent says yes.
+  var taste = null;
+  var tastePoll = null;
+
+  function tasteContactIsPhone(s) {
+    var raw = String((s && (s.parentPhone || s.email)) || '');
+    return !!(s && (s.parentPhone || s.contactType === 'sms' || raw.indexOf('@phone.elingu.local') !== -1));
+  }
+  function tasteShareLinks(s) {
+    var isPhone = tasteContactIsPhone(s);
+    var msg = 'Hi! I am ' + (s.handle || 'your child') + ' and I want to learn on Elingu. Please check your ' + (isPhone ? 'SMS' : 'email') +
+      ' from Elingu and tap "Activate Account" so I can start. ' + location.origin;
+    var digits = String(s.parentPhone || '').replace(/[^0-9]/g, '');
+    if (digits.length === 10 && digits.charAt(0) === '0') digits = '254' + digits.slice(1);
+    return {
+      wa: 'https://wa.me/' + (digits.length >= 11 ? digits : '') + '?text=' + encodeURIComponent(msg),
+      sms: digits.length >= 11 ? 'sms:+' + digits + '?body=' + encodeURIComponent(msg) : null
+    };
+  }
+
+  function startTastePoll() {
+    if (tastePoll || !taste) return;
+    tastePoll = setInterval(function () {
+      if (!taste) return;
+      fetch('/api/students/verification-status?studentId=' + encodeURIComponent(taste.student.id)).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.verified) {
+          clearInterval(tastePoll); tastePoll = null; taste = null;
+          hide();
+          try { if (window.checkParentApprovalStatus) window.checkParentApprovalStatus(); } catch (e) {}
+        }
+      }).catch(function () { /* offline: try again on the next beat */ });
+    }, 6000);
+  }
+
+  function tasteHome() {
+    var s = taste.student, links = tasteShareLinks(s);
+    var open = taste.subjects.map(function (name) {
+      return '<button class="xp-card" data-tsub="' + esc(name) + '"><span class="big" aria-hidden="true">📖</span><span><strong>' + esc(name) + '</strong><small>Read the roadmap and lessons</small></span></button>';
+    }).join('');
+    var locks = ['Ask the tutor', 'Practice papers', 'Save my progress and XP', 'All other subjects'].map(function (t) { return '<li><span aria-hidden="true">🔒</span> ' + esc(t) + '</li>'; }).join('');
+    render(
+      '<div class="xp-taste-banner" role="status"><span aria-hidden="true">⏳</span> <span>Waiting for your parent to say yes</span></div>' +
+      '<p class="xp-sub">Hi ' + esc(s.handle) + '! Your parent or guardian has been sent a message. Remind them, and look around while you wait.</p>' +
+      '<div class="xp-share">' +
+        '<a class="xp-share-btn" href="' + esc(links.wa) + '" target="_blank" rel="noopener">Send my parent the link on WhatsApp</a>' +
+        (links.sms ? '<a class="xp-share-btn alt" href="' + esc(links.sms) + '">Send it by SMS</a>' : '') +
+        '<button class="xp-share-btn alt" type="button" data-act="tasteResend">Send the message again</button>' +
+      '</div>' +
+      '<h2 class="xp-title" style="font-size:20px;margin-top:18px">Open now</h2>' +
+      '<div class="xp-cards">' + open + '</div>' +
+      '<h3 class="xp-note" style="margin:18px 0 6px;font-weight:700">Unlocks when your parent says yes</h3>' +
+      '<ul class="xp-lock-list">' + locks + '</ul>' +
+      '<button class="xp-back" data-act="tasteBack">← Back to the approval screen</button>', false);
+  }
+
+  function tasteSubject(name) {
+    taste.current = name;
+    render('<button class="xp-back" data-act="tasteHome">← Back</button><h1 class="xp-title">' + esc(name) + '</h1>' +
+      '<p class="xp-sub">Read-only preview. Your tutor and practice unlock when your parent says yes.</p><div id="xpList"><div class="xp-skeleton"></div><div class="xp-skeleton"></div></div>', false);
+    api('/api/curriculum/map?curriculum=' + encodeURIComponent(taste.curriculum) + '&grade=' + encodeURIComponent(taste.grade) + '&subject=' + encodeURIComponent(name)).then(function (d) {
+      var list = root.querySelector('#xpList'); if (!list) return;
+      var map = d && d.success && d.map;
+      if (!map || !map.stations || !map.stations.length) { list.innerHTML = '<p class="xp-note">We are still building this subject.</p>'; return; }
+      list.className = '';
+      list.innerHTML = map.stations.map(function (st) {
+        return '<div class="xp-station"><h4>' + esc(st.icon || '') + ' ' + esc(st.title) + '</h4>' + (st.subtopics || []).map(function (sub) {
+          return '<button class="xp-stop" data-tstop="' + esc(sub.id) + '"><span aria-hidden="true">📖</span><span>' + esc(sub.title) + '</span></button>';
+        }).join('') + '</div>';
+      }).join('');
+    }).catch(function () { var l = root.querySelector('#xpList'); if (l) l.innerHTML = '<p class="xp-note">You seem to be offline. Connect and try again.</p>'; });
+  }
+
+  function tastePrimer(id) {
+    render('<button class="xp-back" data-act="tasteSubject">← Back</button><div id="xpList"><div class="xp-skeleton"></div><div class="xp-skeleton"></div></div>', false);
+    api('/api/curriculum/subtopic/' + encodeURIComponent(id)).then(function (d) {
+      var list = root.querySelector('#xpList'); if (!list) return;
+      var sub = d && d.success && d.subtopic; var p = sub && sub.conceptPrimer;
+      if (!sub || !p) { list.innerHTML = '<p class="xp-note">This lesson is not ready yet.</p>'; return; }
+      list.className = '';
+      list.innerHTML = '<div class="xp-lesson"><span class="xp-badge">PREVIEW</span><h3>' + esc(p.title || sub.title) + '</h3>' +
+        (p.tagline ? '<p class="tag">' + esc(p.tagline) + '</p>' : '') + (p.body ? '<div class="body">' + esc(p.body) + '</div>' : '') + '</div>' +
+        '<p class="xp-note">Your tutor can talk this through with you as soon as your parent says yes.</p>';
+    }).catch(function () { var l = root.querySelector('#xpList'); if (l) l.innerHTML = '<p class="xp-note">You seem to be offline. Connect and try again.</p>'; });
+  }
+
+  /** opts: { student, curriculum, grade, subject }. Opens two subjects: the one they explored plus one more. */
+  function showTaste(opts) {
+    if (!opts || !opts.student || !opts.student.id) return;
+    if (!root) build();
+    taste = { student: opts.student, curriculum: opts.curriculum || 'CBC', grade: opts.grade, subjects: [opts.subject], current: null, lastStop: null };
+    root.classList.add('taste');
+    root.hidden = false;
+    document.documentElement.style.overflow = 'hidden';
+    try { if (typeof dismissSplashScreen === 'function') dismissSplashScreen(); } catch (e) {}
+    tasteHome();
+    // the second subject: Mathematics if they did not explore it, otherwise English (first one found in their catalogue)
+    api('/api/curriculum/catalogue?curriculum=' + encodeURIComponent(taste.curriculum) + '&grade=' + encodeURIComponent(taste.grade)).then(function (d) {
+      if (!taste || !d || !d.success) return;
+      var names = (d.subjects || []).map(function (s) { return s.name; });
+      var prefer = ['Mathematics', 'English'];
+      var second = null;
+      for (var i = 0; i < prefer.length && !second; i++) if (names.indexOf(prefer[i]) !== -1 && prefer[i] !== taste.subjects[0]) second = prefer[i];
+      if (!second) second = names.filter(function (n) { return n !== taste.subjects[0]; })[0] || null;
+      if (second) { taste.subjects.push(second); if (!taste.current) tasteHome(); }
+    }).catch(function () {});
+    startTastePoll();
+  }
+
+  function onTasteClick(e) {
+    var t = e.target.closest('button');
+    if (!t || !taste) return false;
+    if (t.dataset.tsub) { tasteSubject(t.dataset.tsub); return true; }
+    if (t.dataset.tstop) { taste.lastStop = t.dataset.tstop; tastePrimer(t.dataset.tstop); return true; }
+    var act = t.dataset.act;
+    if (act === 'tasteHome') { taste.current = null; tasteHome(); return true; }
+    if (act === 'tasteSubject') { tasteSubject(taste.current); return true; }
+    if (act === 'tasteBack') { hide(); return true; }
+    if (act === 'tasteResend') { try { if (window.resendActivationEmail) window.resendActivationEmail(); } catch (x) {} t.textContent = 'Sent. Check again in a minute'; t.disabled = true; return true; }
+    return false;
+  }
+
+  window.ElinguExplore = { show: show, hide: hide, showTaste: showTaste };
 
   function init() {
     // A returning learner who explicitly chose "I have an account" can still get here with ?explore=1.

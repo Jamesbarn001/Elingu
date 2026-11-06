@@ -303,3 +303,11 @@ CREATE TABLE IF NOT EXISTS exam_paper_questions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_exam_questions_paper ON exam_paper_questions(paper_id, position);
+
+-- 9. Remembers which version of the built-in curriculum (subjects, strands, topics) was last copied into this database,
+--    so the app refreshes it at start-up whenever the built-in content has grown, instead of only when the tables are empty.
+CREATE TABLE IF NOT EXISTS curriculum_seed_state (
+  id VARCHAR(32) PRIMARY KEY,
+  content_hash VARCHAR(64) NOT NULL,
+  seeded_at TEXT NOT NULL
+);

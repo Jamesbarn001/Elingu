@@ -2299,7 +2299,7 @@ app.post('/api/parent/complete-google-enrollment', async (req, res) => {
 app.post('/api/students/profile', async (req, res) => {
   let createdStudentId = null;
   try {
-    const { realName, fullName, handle, email, studentEmail, studentPhone, parentPhone, parentName, grade, county, avatar, pin, age, school, quests, parentConsent, schoolLevel, pathway, selectedSubjects, freeSubjects, streamJoinCode, curriculum, examBoard, examTier, yearGroup } = req.body;
+    const { exploredSubject, quickSignup, realName, fullName, handle, email, studentEmail, studentPhone, parentPhone, parentName, grade, county, avatar, pin, age, school, quests, parentConsent, schoolLevel, pathway, selectedSubjects, freeSubjects, streamJoinCode, curriculum, examBoard, examTier, yearGroup } = req.body;
     if (!handle || !pin) {
       return res.status(400).json({ error: 'Nickname and a 4-digit PIN or password are required.' });
     }
@@ -2338,6 +2338,8 @@ app.post('/api/students/profile', async (req, res) => {
     const resolvedParentPhone = normPhone || (parentPhone ? authUtils.normalizeKenyanPhone(parentPhone) : null);
 
     const student = studentStore.createStudent({
+      exploredSubject: typeof exploredSubject === 'string' ? exploredSubject.slice(0, 80) : undefined,
+      quickSignup: quickSignup === true,
       fullName: fullName || realName,
       realName: realName || fullName,
       handle,
@@ -2668,6 +2670,7 @@ app.get('/api/students/verification-status', (req, res) => {
         freeSubjects: student.freeSubjects || (student.quests ? student.quests.slice(0, 3) : ['Mathematics', 'English']),
         quests: student.quests || ['Mathematics', 'Science & Technology', 'English'],
         parentConsent: student.parentConsent,
+        needsProfileSetup: student.needsProfileSetup === true,
         parentVerified: true,
         streak: student.streak || 1,
         points: student.points !== undefined ? student.points : 150,
@@ -2792,12 +2795,12 @@ app.post('/api/students/resend-verification', async (req, res) => {
 // Update profile customization (County, School, Age, Grade, Quests, Email, Points, Curriculum)
 app.put('/api/students/profile', (req, res) => {
   try {
-    const { studentId, county, age, school, avatar, handle, email, studentEmail, studentPhone, quests, freeSubjects, selectedSubjects, points, grade, schoolLevel, pathway, curriculum, examBoard, examTier, yearGroup } = req.body;
+    const { profileSetupDone, studentId, county, age, school, avatar, handle, email, studentEmail, studentPhone, quests, freeSubjects, selectedSubjects, points, grade, schoolLevel, pathway, curriculum, examBoard, examTier, yearGroup } = req.body;
     if (!studentId) {
       return res.status(400).json({ error: 'Student ID is required.' });
     }
     if (!requireStudent(req, res, studentId)) return;
-    const updated = studentStore.updateStudentProfile(studentId, { county, age, school, avatar, handle, email, studentEmail, studentPhone, quests, freeSubjects, selectedSubjects, points, grade, schoolLevel, pathway, curriculum, examBoard, examTier, yearGroup });
+    const updated = studentStore.updateStudentProfile(studentId, { profileSetupDone, county, age, school, avatar, handle, email, studentEmail, studentPhone, quests, freeSubjects, selectedSubjects, points, grade, schoolLevel, pathway, curriculum, examBoard, examTier, yearGroup });
     if (!updated) {
       return res.status(404).json({ error: 'Student profile not found.' });
     }
@@ -12140,6 +12143,9 @@ function purgeUnconfirmedSignups() {
 
 persistentStore.installShutdownHooks();
 persistentStore.hydrate()
+  .then(() => require('./db/repositories/curriculumRepository').ensureSeedCurrent()   // topics and subtopics: refreshed when the built-in curriculum has grown
+    .then(r => { if (r.seeded) console.log(`📚 [curriculum] refreshed: ${r.seededSubjects} subjects, ${r.seededStrands} strands, ${r.seededStops} topics`); })
+    .catch(err => console.error('[curriculum] could not refresh the curriculum (the app keeps running with what is there):', err.message)))
   .then(() => require('./examBank').load())     // practice papers: read from the database (built-in papers if it is unreachable)
   .then(() => {
     purgeUnconfirmedSignups();

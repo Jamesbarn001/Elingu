@@ -80,3 +80,11 @@
   .xp-skeleton { animation: xpPulse 1.2s ease-in-out infinite; }
   @keyframes xpPulse { 0%,100% { opacity: .6 } 50% { opacity: 1 } }
 }
+
+/* ── taste mode (waiting for a parent) ── */
+#exploreOverlay.taste .xp-login { display: none; }
+.xp-taste-banner { display: flex; gap: 8px; align-items: center; background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; border-radius: 12px; padding: 12px 14px; font-weight: 700; margin-bottom: 12px; }
+.xp-share { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+.xp-share-btn { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 16px; border-radius: 12px; border: 0; background: #0D3A26; color: #fff; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; text-align: center; }
+.xp-share-btn.alt { background: transparent; color: #0D3A26; border: 2px solid #0D3A26; }
+.xp-lock-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; color: #6B5B4B; font-size: 15px; }

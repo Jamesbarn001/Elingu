@@ -785,6 +785,27 @@
       opacity: 0.35;
     }
 
+    /* My Subjects is a dropdown under Brain Deck: a chevron opens and closes it, and the list is indented to show it belongs there. */
+    .sidebar-main-tabs { position: relative; }
+    #tab-brain-deck { padding-right: 58px; }
+    .deck-chevron {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; border-radius: 12px;
+      background: transparent; color: var(--text-secondary, #475569); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .deck-chevron:hover { background: rgba(0, 0, 0, 0.06); }
+    .deck-chevron .chev { display: inline-block; transition: transform .18s ease; }
+    .sidebar-nav:not(.subjects-collapsed) .deck-chevron .chev { transform: rotate(180deg); }
+    .sidebar-nav .nav-item[data-subject], .sidebar-nav .subject-mission-slot { margin-left: 12px; border-left: 2px solid var(--glass-border, #E5DED2); border-top-left-radius: 0; border-bottom-left-radius: 0; }
+    #sidebarSubjectsTitle { cursor: pointer; display: flex; align-items: center; justify-content: space-between; margin-left: 12px; min-height: 36px; }
+    #sidebarSubjectsTitle::after { content: '▾'; font-size: 12px; opacity: .7; transition: transform .18s ease; }
+    .sidebar-nav.subjects-collapsed #sidebarSubjectsTitle::after { transform: rotate(-90deg); }
+    /* Some subject rows are shown with an inline 'display: flex !important' by the app, so closing takes them out of the layout instead of using display. */
+    .sidebar-nav.subjects-collapsed .nav-item[data-subject],
+    .sidebar-nav.subjects-collapsed .subject-mission-slot,
+    .sidebar-nav.subjects-collapsed #category-tabs-container {
+      position: absolute !important; width: 0 !important; height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important;
+      overflow: hidden !important; visibility: hidden !important; pointer-events: none !important;
+    }
     .sidebar-section-title {
       font-size: 11px;
       font-weight: 700;
@@ -6049,7 +6070,7 @@
         
         <!-- ════ PRIMARY NAVIGATION: BRAIN DECK & MY SAVED SPACES ════ -->
         <div class="sidebar-main-tabs" id="sidebarPrimaryTabs" style="margin-bottom: 10px; padding-bottom: 0; border-bottom: none;">
-          <a href="#" class="main-nav-tab active" id="tab-brain-deck" data-subject="__deck__" onclick="event.preventDefault(); switchMainTab('brain-deck');">
+          <a href="#" class="main-nav-tab active" id="tab-brain-deck" data-subject="__deck__" onclick="event.preventDefault(); switchMainTab('brain-deck'); if (window.ElinguSidebar) ElinguSidebar.openSubjects();">
             <span class="main-tab-icon">🧠</span>
             <div class="main-tab-text">
               <div class="main-tab-title">Brain Deck</div>
@@ -6057,6 +6078,7 @@
             </div>
             <span class="main-tab-badge hq">HQ</span>
           </a>
+          <button type="button" class="deck-chevron" id="deckChevron" aria-expanded="true" aria-controls="sidebarSubjectsTitle" aria-label="Show or hide my subjects" title="Show or hide my subjects"><span class="chev" aria-hidden="true">▾</span></button>
         </div>
 
         <!-- Personalized Academic Grade Badge (Context for Brain Deck & Subjects) -->
@@ -6079,7 +6101,7 @@
         <div id="grades-ss-container" style="display: none;"></div>
         <span id="levelBadgeText" style="display: none;"></span>
 
-        <div class="sidebar-section-title" id="sidebarSubjectsTitle">My Subjects</div>
+        <div class="sidebar-section-title" id="sidebarSubjectsTitle" role="button" tabindex="0" aria-label="Show or hide my subjects">My Subjects</div>
 
         <!-- Senior School Category Tabs (Hidden in JSS) -->
         <div id="category-tabs-container" class="category-tabs-container" style="display: none;">
@@ -14319,6 +14341,117 @@
     // FIGMA-ALIGNED AUTH, ONBOARDING & CUSTOMIZATION CONTROLLERS
     // ============================================================
     let pendingSignUpData = null;
+
+    // ── Short sign-up: when the visitor already chose curriculum, grade and subject on the explore screen, the form
+    //    asks only for a nickname, a PIN and the parent's contact, and creates the account straight away. ──
+    function hasQuickChoice() {
+      const c = window.__exploreChoice;
+      return !!(c && c.curriculum && c.grade && c.subject);
+    }
+
+    const NICK_ANIMALS = ['Simba', 'Chui', 'Twiga', 'Ndovu', 'Kasuku', 'Tai', 'Duma', 'Swala', 'Kobe', 'Nyati', 'Punda', 'Nyani'];
+    const NICK_WORDS = ['Jasiri', 'Mwerevu', 'Hodari', 'Furaha', 'Shupavu', 'Mwanga', 'Haraka', 'Imara'];
+    function suggestNickname() {
+      const pick = a => a[Math.floor(Math.random() * a.length)];
+      return pick(NICK_ANIMALS) + pick(NICK_WORDS) + String(10 + Math.floor(Math.random() * 90));
+    }
+
+    function applyQuickSignUpLook() {
+      const quick = hasQuickChoice();
+      const setText = (el, text) => { if (!el) return; if (el.dataset.orig === undefined) el.dataset.orig = el.textContent; el.textContent = quick ? text : el.dataset.orig; };
+      const hide = (el, on) => { if (el) el.style.display = on ? 'none' : ''; };
+      const step1 = document.getElementById('signUpStep1');
+      if (!step1) return;
+      hide(step1.querySelector('.auth-step-indicator'), quick);
+      setText(step1.querySelector('.auth-form-subheading'), 'Three quick things, then you start learning.');
+      const curBtn = document.getElementById('signupCurriculumCBC');
+      hide(curBtn && curBtn.closest('.auth-field-group'), quick);
+      const nickLabel = step1.querySelector('label[for="figmaNickname"]');
+      const pinLabel = step1.querySelector('label[for="figmaPassword"]');
+      const parentLabel = step1.querySelector('label[for="figmaEmail"]');
+      [[nickLabel, '1. Choose a nickname'], [pinLabel, '2. Choose a 4-digit PIN'], [parentLabel, '3. Parent or guardian email or mobile']].forEach(([el, t]) => {
+        if (!el) return;
+        if (el.dataset.orig === undefined) el.dataset.orig = el.innerHTML;
+        el.innerHTML = quick ? (t + ' <span style="color:#DC2626;">*</span>') : el.dataset.orig;
+      });
+      // what they already chose, shown so they can see it was kept
+      let chip = document.getElementById('quickChoiceChip');
+      if (quick) {
+        const c = window.__exploreChoice;
+        if (!chip) {
+          chip = document.createElement('div');
+          chip.id = 'quickChoiceChip';
+          chip.style.cssText = 'display:inline-flex;gap:6px;align-items:center;background:#ECFDF5;color:#065F46;font-size:13px;font-weight:700;padding:6px 12px;border-radius:10px;margin-bottom:12px;';
+          const anchor = step1.querySelector('.auth-form-subheading');
+          if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(chip, anchor.nextSibling);
+        }
+        chip.textContent = '✓ ' + (c.curriculum === 'BRITISH' ? 'Cambridge' : 'CBC') + ' · ' + (c.curriculum === 'BRITISH' ? 'Year ' : 'Grade ') + c.grade + ' · ' + c.subject;
+        chip.style.display = 'inline-flex';
+      } else if (chip) chip.style.display = 'none';
+      const btn = document.getElementById('btnGoToStep2');
+      if (btn) { const s = btn.querySelector('span'); if (s) s.textContent = quick ? 'Start learning →' : 'Next: Grade & Study Space →'; }
+      // nickname helper (works in both forms)
+      const nick = document.getElementById('figmaNickname');
+      if (nick && !document.getElementById('btnSuggestNick')) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.id = 'btnSuggestNick'; b.textContent = 'Suggest a nickname';
+        b.style.cssText = 'margin-top:6px;min-height:44px;padding:0 12px;border:1.5px solid #0D3A26;border-radius:10px;background:#fff;color:#0D3A26;font-weight:700;cursor:pointer;';
+        b.addEventListener('click', () => { nick.value = suggestNickname(); nick.dispatchEvent(new Event('input', { bubbles: true })); nick.focus(); });
+        nick.insertAdjacentElement('afterend', b);
+      }
+    }
+    window.applyQuickSignUpLook = applyQuickSignUpLook;
+
+    async function completeQuickSignUp() {
+      if (!pendingSignUpData || !hasQuickChoice()) return false;
+      const c = window.__exploreChoice;
+      const isBritish = c.curriculum === 'BRITISH';
+      const grade = parseInt(c.grade, 10);
+      const btn = document.getElementById('btnGoToStep2');
+      if (btn) { btn.classList.add('loading'); btn.innerHTML = '<span>Creating Account... 🌱</span>'; }
+      const payload = {
+        handle: pendingSignUpData.handle,
+        pin: pendingSignUpData.pin,
+        email: pendingSignUpData.email,
+        parentPhone: pendingSignUpData.parentPhone || undefined,
+        studentEmail: pendingSignUpData.studentEmail || undefined,
+        studentPhone: pendingSignUpData.studentPhone || undefined,
+        parentConsent: true,
+        quickSignup: true,
+        curriculum: isBritish ? 'BRITISH' : 'CBC',
+        examBoard: isBritish ? 'CAIE' : undefined,
+        grade: grade,
+        yearGroup: isBritish ? grade : undefined,
+        exploredSubject: c.subject,
+        avatar: pendingSignUpData.avatar || selectedSignUpAvatar || '🦁'
+      };
+      try {
+        const res = await fetch('/api/students/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (btn) { btn.classList.remove('loading'); btn.innerHTML = '<span>Start learning →</span>'; }
+        if (res.ok && data.student) {
+          try { localStorage.removeItem('elingu_signup_draft'); } catch (e) {}
+          if (data.sessionToken) sessionStorage.setItem('elingu_student_token', data.sessionToken);
+          if (data.awaitingParentApproval) {
+            showParentApprovalScreen(data.student);
+            // a small taste of the app while the parent decides (read-only, nothing is saved or sent to the AI tutor)
+            try { if (window.ElinguExplore && ElinguExplore.showTaste) ElinguExplore.showTaste({ student: data.student, curriculum: payload.curriculum, grade: grade, subject: c.subject }); } catch (e) {}
+            pendingSignUpData = null;
+            return true;
+          }
+          loginLearnerDirectly(data.student, data.sessionToken);
+          pendingSignUpData = null;
+          closeAuthOverlay();
+          return true;
+        }
+        alert(data.error || 'Could not complete sign up. Please try again.');
+        return true;
+      } catch (err) {
+        if (btn) { btn.classList.remove('loading'); btn.innerHTML = '<span>Start learning →</span>'; }
+        alert('Could not complete setup. Please check your network connection.');
+        return true;
+      }
+    }
     let selectedSignUpCurriculum = 'CBC'; // 'CBC' | 'BRITISH'
     let selectedStep2Board = 'CAIE'; // 'CAIE' | 'EDEXCEL'
     let selectedStep2YearNum = 10; // 7 | 8 | 9 | 10 | 11
@@ -15314,9 +15447,12 @@
       } finally {
         if (btnGo) {
           btnGo.classList.remove('loading');
-          btnGo.innerHTML = '<span>Next: Grade & Study Space →</span>';
+          btnGo.innerHTML = '<span>' + (hasQuickChoice() ? 'Start learning →' : 'Next: Grade & Study Space →') + '</span>';
         }
       }
+
+      // Short path: the visitor already chose curriculum, grade and subject, so create the account now.
+      if (hasQuickChoice() && pendingSignUpData) { await completeQuickSignUp(); return; }
 
       // Switch wizard view
       const step1 = document.getElementById('signUpStep1');

@@ -180,7 +180,7 @@ async function getCurriculumMap(curriculum = 'CBC', grade = 8, subject = 'Mathem
     JOIN curricula c ON g.curriculum_id = c.id
     JOIN learning_strands s ON s.subject_id = sub.id
     JOIN sub_strands ss ON ss.strand_id = s.id
-    WHERE sub.id = $1
+    WHERE sub.id = $1 AND COALESCE(ss.status, 'available') <> 'retired'
     ORDER BY s.order_index ASC, ss.order_index ASC
   `;
 
@@ -448,8 +448,8 @@ async function getCatalogue(curriculum = 'CBC', grade = null) {
  */
 async function ensureSeedCurrent() {
   const crypto = require('crypto');
-  const { ALL_CURRICULUM_SEEDS } = require('../seeds');
-  const hash = crypto.createHash('sha256').update(JSON.stringify(ALL_CURRICULUM_SEEDS) + '|seed-v1').digest('hex');
+  const { ALL_CURRICULUM_SEEDS, RETIRED_SUBTOPIC_IDS } = require('../seeds');
+  const hash = crypto.createHash('sha256').update(JSON.stringify(ALL_CURRICULUM_SEEDS) + '|retired:' + JSON.stringify(RETIRED_SUBTOPIC_IDS || []) + '|seed-v1').digest('hex');
   await db.initSchema();
   let stored = null;
   try {

@@ -34,7 +34,12 @@
   cursor: pointer; font: inherit; color: inherit;
 }
 .xp-card:hover, .xp-card:focus-visible { border-color: #0D3A26; outline: none; box-shadow: 0 0 0 3px rgba(13,58,38,.15); }
-.xp-card .big { font-size: 30px; line-height: 1; }
+.xp-card .big { font-size: 30px; line-height: 1; display: inline-flex; }
+.xp-card .big .i { width: 30px; height: 30px; }
+.xp-card .big.chip { font-size: 13px; font-weight: 800; letter-spacing: .4px; min-width: 52px; padding: 8px 6px; justify-content: center; border: 2px solid currentColor; border-radius: 10px; color: #0D3A26; }
+.xp-brand { display: inline-flex; align-items: center; gap: 8px; }
+.xp-brand img { border-radius: 6px; }
+.xp-stop .i, .xp-lock-list .i, .xp-taste-banner .i { width: 1.1em; height: 1.1em; vertical-align: -0.2em; }
 .xp-card strong { display: block; font-size: 17px; }
 .xp-card small { display: block; color: #4B5563; font-size: 13.5px; margin-top: 2px; }
 .xp-chips { display: flex; flex-wrap: wrap; gap: 10px; }

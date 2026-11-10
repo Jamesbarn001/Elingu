@@ -59,8 +59,8 @@ module.exports = {
     assert.ok(html.includes('handleSaveMySpace'), 'HTML script must implement handleSaveMySpace');
     assert.ok(html.includes('handleNewSpace'), 'HTML script must implement handleNewSpace');
     assert.ok(html.includes('renderSavedSpacesView'), 'HTML script must implement renderSavedSpacesView');
-    assert.ok(html.includes('💾 Save My Space 🪐'), 'HTML must feature the exact youth branding 💾 Save My Space 🪐');
-    assert.ok(html.includes('🚀 New Space'), 'HTML must feature the exact youth branding 🚀 New Space');
+    assert.ok(html.includes(" Save My Space</span>"), 'HTML must feature the youth branding Save My Space');
+    assert.ok(html.includes(" New Space</span>"), 'HTML must feature the youth branding New Space');
 
     // Verify ordering: Brain Deck & Saved Spaces come BEFORE My Subjects
     const idxPrimary = html.indexOf('id="sidebarPrimaryTabs"');

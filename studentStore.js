@@ -511,7 +511,7 @@ function createStudent({ exploredSubject, quickSignup, fullName, realName, handl
   // Selected subjects — validated per curriculum & level
   const JSS_SUBJECTS = ['Mathematics', 'English', 'Kiswahili', 'Integrated Science', 'Science & Technology', 'Social Studies', 'Agriculture', 'Creative Arts'];
   const SS_COMPULSORY = ['Mathematics', 'Core Mathematics', 'Essential Mathematics', 'English', 'Kiswahili', 'Community Service Learning'];
-  const SS_STEM = ['Physics', 'Chemistry', 'Biology', 'Computer Studies', 'Agriculture', 'Home Science', 'Advanced Mathematics', 'Drawing and Design', 'Aviation Technology', 'Building and Construction', 'Electrical and Electronics Technology'];
+  const SS_STEM = ['Physics', 'Chemistry', 'Biology', 'General Science', 'Computer Studies', 'Agriculture', 'Home Science', 'Advanced Mathematics', 'Drawing and Design', 'Aviation Technology', 'Building and Construction', 'Electrical and Electronics Technology'];
   const SS_HUMANITIES = ['History and Citizenship', 'Geography', 'Business Studies', 'CRE', 'IRE', 'HRE', 'Literature in English', 'Fasihi ya Kiswahili', 'French', 'German', 'Arabic', 'Mandarin Chinese'];
   const SS_ARTS_SPORTS = ['Music and Dance', 'Theatre and Film', 'Fine Art', 'Graphic Design', 'Sports and Recreation'];
   const BRITISH_SUBJECTS = [
@@ -2053,7 +2053,7 @@ function updateStudentExamTier(studentId, newTier, actor = {}) {
 
   const isBritish = student.curriculum === 'BRITISH' || student.curriculum === 'IGCSE';
   if (!isBritish) {
-    return { success: false, error: 'Exam tiers apply only to British International (IGCSE) curriculum.' };
+    return { success: false, error: 'Exam tiers apply only to Cambridge IGCSE curriculum.' };
   }
 
   const yearGroup = parseInt(student.yearGroup || student.grade, 10);

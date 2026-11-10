@@ -18,6 +18,8 @@
     });
   }
   function $(sel, el) { return (el || root).querySelector(sel); }
+  // Icon from the self-hosted sprite; icons.js loads later, so look it up at render time and fall back to nothing.
+  function ic(name, cls) { return window.ico ? window.ico(name, cls || 'i-sm') + ' ' : ''; }
 
   function api(method, url, body) {
     return fetch(url, {
@@ -88,8 +90,8 @@
       var open = tries.filter(function (a) { return a.status === 'in_progress'; })[0];
       var done = tries.filter(function (a) { return a.status === 'submitted'; });
       h += '<div class="ex-card"><h3>' + esc(p.title) + '</h3>' +
-        '<div class="ex-meta"><span>⏱ ' + esc(p.durationMinutes) + ' minutes</span><span>📝 ' + esc(p.totalMarks) + ' marks</span><span>❓ ' + esc(p.questionCount) + ' questions</span>' +
-        '<span>' + (p.calculatorAllowed ? '🧮 Calculator allowed' : '🚫 No calculator') + '</span></div>' +
+        '<div class="ex-meta"><span>' + ic('timer') + esc(p.durationMinutes) + ' minutes</span><span>' + ic('file-pen-line') + esc(p.totalMarks) + ' marks</span><span>' + ic('circle-help') + esc(p.questionCount) + ' questions</span>' +
+        '<span>' + (p.calculatorAllowed ? ic('calculator') + 'Calculator allowed' : ic('calculator', 'i-sm i-off') + 'No calculator') + '</span></div>' +
         '<div class="ex-note" style="margin-bottom:10px">' + esc(p.series) + '</div>' +
         '<button class="ex-btn" data-ex="start" data-id="' + esc(p.id) + '">' + (open ? 'Resume paper' : (done.length ? 'Sit it again' : 'Start paper')) + '</button>';
       if (done.length) {
@@ -123,7 +125,7 @@
     var resume = attemptFor(paperId).filter(function (a) { return a.status === 'in_progress'; })[0];
     root.innerHTML = '<div class="ex-root"><button class="ex-link" data-ex="back">← Back to papers</button>' +
       '<h2>' + esc(p.title) + '</h2>' +
-      '<div class="ex-meta"><span>⏱ ' + esc(p.durationMinutes) + ' minutes</span><span>📝 ' + esc(p.totalMarks) + ' marks</span><span>❓ ' + esc(p.questionCount) + ' questions</span></div>' +
+      '<div class="ex-meta"><span>' + ic('timer') + esc(p.durationMinutes) + ' minutes</span><span>' + ic('file-pen-line') + esc(p.totalMarks) + ' marks</span><span>' + ic('circle-help') + esc(p.questionCount) + ' questions</span></div>' +
       '<div class="ex-card"><h3>Before you start</h3><ul style="margin:6px 0 0 18px;padding:0;line-height:1.7">' +
       '<li>The clock starts when you press Start and <b>keeps running even if you close the page</b>.</li>' +
       '<li>Your answers are saved as you go. When time is up, your paper is handed in for you.</li>' +

@@ -3455,7 +3455,7 @@ Kenyan context. The question MUST strictly be about ${cleanSubject} (${cleanStra
             <label class="form-label">School Curriculum Framework</label>
             <select id="schCurriculum" class="form-select" onchange="toggleSchoolCurriculumGrades(this.value)">
               <option value="CBC" selected>Kenyan CBC / CBE (Junior Secondary &amp; Senior School)</option>
-              <option value="BRITISH">British International Curriculum (Cambridge Checkpoint &amp; IGCSE)</option>
+              <option value="BRITISH">Cambridge International Curriculum (Cambridge Checkpoint &amp; IGCSE)</option>
             </select>
           </div>
           <p style="font-size: 12.5px; color: var(--text-sub); margin: 0 0 12px 0;">We will generate a secure school code for you. You will see it after you confirm your email.</p>

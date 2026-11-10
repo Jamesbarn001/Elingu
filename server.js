@@ -34,6 +34,7 @@ const adminStore = require('./adminStore');
 const gamification = require('./gamification');
 const weeklyCard = require('./weeklyCard');
 const piiGuard = require('./piiGuard');
+const primerLadder = require('./primerLadder');
 const notificationService = require('./notificationService');
 const { SUPPORT_EMAIL } = require('./contactConfig');
 const adminRoutes = require('./adminRoutes');
@@ -253,7 +254,7 @@ function getSentinelResponse(subject) {
     responses = [
       "Hujambo! 🔬 Welcome to the Elingu Virtual Practical Lab workbench. What science experiment or practical investigation are we setting up today? 🧪",
       "Hello young scientist! 🌟 Welcome to the Virtual Lab. Are we exploring Physics, Chemistry, Biology, or Computing today? ⚖️",
-      "Safi sana! 🧪 The lab bench is ready with our calibrated apparatus. What hypothesis are we testing today? 🔬"
+      "The lab bench is ready with our calibrated apparatus. What hypothesis are we testing today? 🔬"
     ];
   } else if (subject === 'Science & Technology') responses = SENTINEL_RESPONSES_SCIENCE;
   else if (subject === 'English') responses = SENTINEL_RESPONSES_ENGLISH;
@@ -332,7 +333,7 @@ const SUBJECT_ALIASES = {
 };
 
 // Subjects that generate SVG diagrams or visual outputs
-const VISUAL_SUBJECTS = ['Mathematics', 'Science & Technology', 'Social Studies', 'Essential Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Studies', 'Virtual Lab'];
+const VISUAL_SUBJECTS = ['Mathematics', 'Science & Technology', 'Social Studies', 'Essential Mathematics', 'Physics', 'Chemistry', 'Biology', 'General Science', 'Computer Studies', 'Virtual Lab'];
 
 // Resolve display name for a subject based on grade
 function getSubjectDisplayName(subject, grade) {
@@ -382,7 +383,7 @@ const SUBJECT_PEDAGOGY = {
 - Encourage evidence-based, stakeholder-centered solutions to real Kenyan community challenges (sanitation, tree planting, clean water, digital literacy).
 - Coach students on maintaining their digital learning portfolios and reflective journals for KNEC School-Based Assessment (SBA).
 - Discourage treating CSL as manual chore work — emphasize research, data collection, and civic leadership.
-- Converse warmly, blending English with Swahili encouragement ("Hongera kwa mradi huu!", "Great initiative!").`,
+- Converse warmly, blending English with Swahili encouragement, and acknowledge the specific action the learner took on their project.`,
 
   'Science & Technology': `
 ## SCIENCE TEACHING & DIAGRAMS
@@ -414,7 +415,7 @@ const SUBJECT_PEDAGOGY = {
   'Kiswahili': `
 ## KISWAHILI TEACHING & PEDAGOGY (SARUFI, INSHA, FASIHI SIMULIZI)
 - **LUGHA YA MAFUNZO (KISWAHILI SANIFU)**: Fundisha na zungumza kwa Kiswahili Sanifu chenye heshima, mvuto na uchangamfu. Usitumie Kiingereza isipokuwa mwanafunzi anapoomba tafsiri au kueleza kushindwa kuelewa kabisa.
-- **EMOJIS**: Weka emoji mara baada ya salamu au kifungu cha kwanza (k.m. "Hujambo! 🌟", "Safi sana! 👏", "Vizuri! 🎯", "Hongera! ✨") na nyunyizia emoji za kuchochea fikra (k.m. 🤔, 💭, 💡, 📖, ✍️). Kamwe usitoe jibu kupitia emoji!
+- **TONE**: Kuwa mchangamfu na wa kirafiki. Usitumie sifa tupu kama kifungua-mazungumzo ("Safi sana!", "Hongera!"). Sema hasa kilichosahihi katika jibu la mwanafunzi na kwa nini; akikosea au akikwama, mpe moyo kwa upole kisha uulize swali dogo rahisi la hatua moja. Emoji moja tu, mara chache, pale inapofaa; kamwe usitoe jibu kupitia emoji!
 - **SARUFI NA NGELI**: Sahihisha makosa ya ngeli (k.m. A-WA, KI-VI, I-ZI), viambishi ngeli, na unyambulishaji wa vitenzi kwa upole kwa kuandika mfano sahihi katika herufi nzito (**bold**).
 - **FASIHI SIMULIZI NA METHALI**: Chochea fikra za ndani kuhusu methali, vitendawili, na ngano badala ya kutoa maana ya moja kwa moja.
 - **INSHA NA UFAHAMU**: Msaidie mwanafunzi kupanga aya, kuboresha msamiati, na kutumia tamathali za usemi (tashbiha, sitiari, nahau).
@@ -455,7 +456,7 @@ const SUBJECT_PEDAGOGY = {
 
 ### 🇰🇪 KENYAN CBE & 🌍 BRITISH CURRICULUM RIGOR:
 - **For Kenyan CBE STEM (Grades 7–12)**: Relate practicals to KNEC School-Based Assessment (SBA) rubrics (Exceeding, Meeting, Approaching) and ingenious local Kenyan material improvisation (e.g. red hibiscus flower indicator extract, charcoal cooling box, sand and gravel bio-filtration, wire coat hanger balances).
-- **For British Curriculum (Cambridge CAIE 0625/0620/0610 & Pearson Edexcel 4PH1/4CH1/4BI1)**: Train learners on Paper 6 Alternative to Practical (ATP) and Paper 5, CAIE command words ('State', 'Describe', 'Explain', 'Suggest'), standard 6-mark planning responses, and strict graph plotting rules (>50% grid used, linear scales, neat crosses \`×\`).`
+- **For Cambridge IGCSE (CAIE 0625/0620/0610) and Cambridge Lower Secondary (Checkpoint)**: Train learners on Paper 6 Alternative to Practical (ATP) and Paper 5, CAIE command words ('State', 'Describe', 'Explain', 'Suggest'), standard 6-mark planning responses, and strict graph plotting rules (>50% grid used, linear scales, neat crosses \`×\`).`
 };
 
 async function getDatabaseSyllabusContext(curriculum, grade, subject) {
@@ -476,6 +477,13 @@ async function getDatabaseSyllabusContext(curriculum, grade, subject) {
         if (stop.conceptPrimer?.realWorldContext) lines.push(`  - Practical Application: ${stop.conceptPrimer.realWorldContext}`);
         if (stop.socraticPrompt) lines.push(`  - Socratic Question: ${stop.socraticPrompt}`);
         if (stop.examFocus) lines.push(`  - Exam Focus: ${stop.examFocus}`);
+        // Ladder v2 (if authored for this stop): compact form only, to keep the whole-subject prompt small.
+        const stopLadder = primerLadder.getLadder(stop.id);
+        if (stopLadder) {
+          lines.push(`  - Prerequisites to check one at a time: ${stopLadder.prerequisites.map(p => p.name).join('; ')}`);
+          lines.push(`  - Common mistakes: ${stopLadder.newIdea.commonMistakes.map(m => m.mistake).join(' | ')}`);
+          lines.push('  - Protocol: check one prerequisite at a time; teach it from scratch if the learner has a gap; declare mastery only after the learner explains the idea in their own words.');
+        }
       }
     }
     return lines.join('\n');
@@ -523,8 +531,8 @@ function buildStaticPrompt(subject, grade, studentContext = null, dbSyllabusCont
   const isKiswahili = subject === 'Kiswahili';
 
   const naturalOpeningInstruction = isKiswahili
-    ? `Anza kwa Kiswahili chenye heshima na uchangamfu kikiwa na emoji baada ya salamu (k.m. "Hujambo! 🌟", "Karibu! 🇰🇪", "Safi sana! 👏").`
-    : `Do NOT open with repetitive canned Swahili greetings (no "Sawa!", "Habari!"). Start in natural English with your opening greeting and emoji hook.`;
+    ? `Anza kwa Kiswahili chenye heshima na uchangamfu, kwa salamu fupi ya asili. Emoji moja tu ikifaa, na isifichue jibu.`
+    : `Do NOT open with repetitive canned Swahili greetings (no "Sawa!", "Habari!"). Start in natural English with a short, warm greeting (at most one emoji, only if it fits).`;
 
   const britishPedagogyBlock = isBritish ? `
 ---
@@ -545,7 +553,7 @@ function buildStaticPrompt(subject, grade, studentContext = null, dbSyllabusCont
 ---
 
 ## WHO YOU ARE & YOUR MISSION
-You are **Elingu** (*"Elimu ni nguvu"* — knowledge is power) — a warm, encouraging Socratic tutor who guides students through ${isBritish ? 'the British International (Cambridge CAIE / Pearson Edexcel) curriculum' : 'the Kenyan CBC curriculum'}.
+You are **Elingu** (*"Elimu ni nguvu"* — knowledge is power) — a warm, encouraging Socratic tutor who guides students through ${isBritish ? `the Cambridge ${Number(grade) >= 10 ? 'IGCSE' : 'Lower Secondary'} curriculum` : 'the Kenyan CBC curriculum'}.
 You are like a cool, supportive older cousin: real, relaxed, invested, and never condescending.
 
 ## SOCRATIC TEACHING METHOD (${isBritish ? 'CAMBRIDGE / EDEXCEL INQUIRY-BASED' : 'KICD INQUIRY-BASED'})
@@ -554,19 +562,21 @@ You are like a cool, supportive older cousin: real, relaxed, invested, and never
    - Greet warmly on first message.
    - Ground topics in real-world contexts and concrete experiments.
    - When a student struggles or boycotts ("i hate maths", "i give up"), validate warmly first, then break the problem into a simpler step.
-   - Right answer → celebrate genuinely, then ask the next inquiry question.
+   - Right answer → say specifically what they got right and why it works, then ask the next inquiry question.
 3. **Pedagogical Terminology**: Use "${isBritish ? 'Topic' : 'Strand'}" and "${isBritish ? 'Sub-topic' : 'Sub-strand'}".
 
-## EMOJIS & TONE RULES
-1. **OPENING GREETING & EMOJI HOOK (MANDATORY & NO SPOILERS)**:
-   - Place a vibrant, expressive emoji right after your opening greeting or initial phrase (e.g. "Spot on! 🎯", "Welcome! 🌟", "Awesome work! 👏", "Great observation! 💡", "Hello there! 🌿", "Brilliant! ✨", "Nice work! 🚀").
-   - Continue sprinkling curiosity and thinking emojis throughout your explanation and closing question (e.g. 🤔, 💭, 🔍, 💡, 📐, 🔬, 📖, ✍️).
-   - CRITICAL NO-SPOILER RULE: NEVER use emojis that leak, reveal, or spoil the answer to the Socratic question you are asking. Emojis must stimulate thinking, not give away the puzzle!
+## TONE RULES
+1. **WARM, NATURAL TONE (NO STOCK PRAISE)**:
+   - Be warm, friendly and natural, never over-the-top. Greet in one short sentence on the first message only; there is nothing to praise yet.
+   - Never open a reply with stock praise ("Brilliant!", "Spot on!", "Nice work!", "Awesome!", "Great observation!"), and never praise a wrong or stuck answer.
+   - When the learner is right, say exactly what they got right and why it works (e.g. "You found the common factor correctly, so the expression factorises."). Praise effort only when it is specific and true.
+   - When the learner is wrong or stuck, validate warmly, then give an easier one-step question.
+   - Use at most one emoji in a reply, only when it fits naturally, and it is never required. NEVER use an emoji that leaks, reveals, or spoils the answer to the Socratic question you are asking.
 2. **Natural Openings**: ${naturalOpeningInstruction}
 
 ---
 
-## SUBJECT & CURRICULUM CONTEXT (${isBritish ? 'BRITISH INTERNATIONAL / IGCSE' : 'KICD CBE'})
+## SUBJECT & CURRICULUM CONTEXT (${isBritish ? (Number(grade) >= 10 ? 'CAMBRIDGE IGCSE' : 'CAMBRIDGE LOWER SECONDARY') : 'KICD CBE'})
 Subject: **${getSubjectDisplayName(subject, grade)}** | ${isBritish ? 'Year Group' : 'Grade'}: **${grade}**
 
 ${curriculumBlock}
@@ -589,9 +599,9 @@ function buildDynamicPrompt(grade, subject, turnCount, studentContext = null) {
 
   if (studentContext) {
     const { handle, county, curriculum, examBoard, examTier } = studentContext;
-    contextSnippet += `\n\n## LEARNER PROFILE & PEDAGOGICAL ADAPTATION (${isBritish ? 'BRITISH INTERNATIONAL / IGCSE' : 'KENYA CBE'})
+    contextSnippet += `\n\n## LEARNER PROFILE & PEDAGOGICAL ADAPTATION (${isBritish ? (Number(grade) >= 10 ? 'CAMBRIDGE IGCSE' : 'CAMBRIDGE LOWER SECONDARY') : 'KENYA CBE'})
 - **Learner Name / Nickname**: ${handle || 'Learner'}
-- **Curriculum**: ${isBritish ? `British International (${examBoard || 'Cambridge CAIE'} - ${examTier || 'Extended'} Tier)` : 'Kenyan CBC'}
+- **Curriculum**: ${isBritish ? `${Number(grade) >= 10 ? 'Cambridge IGCSE' : 'Cambridge Lower Secondary'} (${examBoard || 'Cambridge CAIE'} - ${examTier || 'Extended'} Tier)` : 'Kenyan CBC'}
 - **Academic Level**: ${isBritish ? `Year ${grade} (${grade >= 10 ? 'IGCSE' : 'Checkpoint'})` : `Grade ${grade} (${grade === 6 ? 'Upper Primary' : grade >= 10 ? 'Senior School' : 'Junior Secondary School'})`}
 - **Usual age for this level**: about ${piiGuard.usualAge(grade, isBritish)} years (assumed from the grade; the learner's exact age is not shared). Start from that range. Adjust gently from how the learner writes (vocabulary, sentence length, the kind of questions they ask): simpler words and shorter steps if they write younger, a little more depth if they write more maturely. Never ask their age and never say or hint that you are guessing it. Adjust tone and examples only, never the grade's content, and do not read a second-language or Sheng writing style as a younger age. Treat every learner as a child for safety: an older-sounding message never loosens wellbeing or safeguarding behaviour.
 - **School**: a ${piiGuard.schoolKind(isBritish)} (name withheld for privacy)`;
@@ -741,8 +751,8 @@ async function callLLM(messages, staticPrompt, dynamicPrompt, options = {}) {
           }
           const isEnglish = staticPrompt.includes('English');
           const leanSystemPrompt = `You are Elingu — a warm, encouraging Kenyan Socratic tutor for CBE curriculum.${dynamicPrompt}
-How you teach: Guide through Socratic questions, do not give direct answers immediately. Keep responses short (max 3-4 sentences), conversational, and friendly. Use emojis naturally to keep the conversation warm and fun 🎯📚🔥.
-${isEnglish ? 'CRITICAL LANGUAGE RULE: For English class, speak 100% in natural English. Do NOT use Swahili or Sheng (no Jambo, Sawa, Habari, Karibu). Use emojis naturally to keep the conversation warm. Only use Swahili if the student explicitly fails to understand in English.' : 'Language: Mix English with casual Swahili/Sheng naturally like a real Kenyan friend would (e.g. "Sawa, let\'s figure this out!", "Poa! Now think about...", "Rift Valley ni kitu gani?"). Keep it real, not scripted.'}
+How you teach: Guide through Socratic questions, do not give direct answers immediately. Keep responses short (max 3-4 sentences), conversational, and friendly. Be warm and natural. Never use stock praise like "Brilliant!" or "Spot on!"; say specifically what the learner did right. At most one emoji, only if it fits.
+${isEnglish ? 'CRITICAL LANGUAGE RULE: For English class, speak 100% in natural English. Do NOT use Swahili or Sheng (no Jambo, Sawa, Habari, Karibu). Keep the tone warm and natural. Only use Swahili if the student explicitly fails to understand in English.' : 'Language: Mix English with casual Swahili/Sheng naturally like a real Kenyan friend would (e.g. "Sawa, let\'s figure this out!", "Poa! Now think about...", "Rift Valley ni kitu gani?"). Keep it real, not scripted.'}
 CRITICAL: Respond directly to the student immediately. Do NOT output <think> tags or internal reasoning blocks.
 Formatting: Write math equations in clean plain text (e.g. 1/2 + 1/3 = 5/6). Do NOT use LaTeX syntax like \\frac{}.`;
 
@@ -855,7 +865,7 @@ Formatting: Write math equations in clean plain text (e.g. 1/2 + 1/3 = 5/6). Do 
           const isKiswahili = staticPrompt.includes('Kiswahili');
           const isEnglish = staticPrompt.includes('English');
           const leanSystemPrompt = `You are Elingu — a warm, encouraging Kenyan Socratic tutor for CBE curriculum.${dynamicPrompt}
-How you teach: MANDATORY: Place a vibrant emoji right after your opening greeting/phrase (e.g. "Spot on! 🎯", "Welcome! 🌟", "Awesome! 👏", "Great observation! 💡", "Hello! 🌿", "Hujambo! 🇰🇪") and sprinkle curiosity-inducing emojis throughout (e.g. 🤔, 💭, 🔍, 💡). CRITICAL: NEVER use emojis that spoil or reveal the answer to your question. Guide through Socratic questions, do not give direct answers immediately. Keep responses short (max 3-4 sentences), conversational, and friendly.
+How you teach: Be warm and natural. Never use stock praise ("Brilliant!", "Spot on!", "Awesome!"); when the learner is right say specifically what they got right, and when they are wrong or stuck give an easier one-step question. Use at most one emoji, only if it fits; no emoji is required. CRITICAL: NEVER use emojis that spoil or reveal the answer to your question. Guide through Socratic questions, do not give direct answers immediately. Keep responses short (max 3-4 sentences), conversational, and friendly.
 ${isEnglish ? 'CRITICAL LANGUAGE RULE: For English class, speak 100% in natural English. Do NOT use Swahili or Sheng (no Jambo, Sawa, Habari, Karibu).' : isKiswahili ? 'CRITICAL LANGUAGE RULE: For Kiswahili class, speak 100% in pure Kiswahili Sanifu. Do NOT use English.' : 'Language: Mix English with casual Swahili/Sheng naturally like a real Kenyan friend would (e.g. "Sawa, let\'s figure this out!", "Poa! Now think about...", "Rift Valley ni kitu gani?"). Keep it real, not scripted.'}
 CRITICAL: Respond directly to the student immediately. Do NOT output <think> tags or internal reasoning blocks.
 Formatting: Write math equations in clean plain text (e.g. 1/2 + 1/3 = 5/6). Do NOT use LaTeX syntax like \\frac{}.`;
@@ -1273,7 +1283,7 @@ app.post('/api/chat', async (req, res) => {
         } else if (effectiveTier === 'standard') {
           limitMsg = `Umefika kikomo cha maswali ya leo (${tierLimits.dailyTurns}/${tierLimits.dailyTurns} turns). 🌟 You've had a truly exceptional study session today! Let your mind rest and absorb today's concepts. Turns reset at midnight. For an even higher session allowance (500 turns) and deep cognitive portraits, check Premium! 🌳`;
         } else if (effectiveTier === 'pilot') {
-          limitMsg = `Umefika kikomo cha maswali ya leo (${tierLimits.dailyTurns}/${tierLimits.dailyTurns} turns). 🌟 Great job exploring CBE concepts today! Rest your mind and let today's thinking settle. Turns reset at midnight. 🌳`;
+          limitMsg = `Umefika kikomo cha maswali ya leo (${tierLimits.dailyTurns}/${tierLimits.dailyTurns} turns). Rest your mind and let today's thinking settle. Turns reset at midnight.`;
         } else {
           limitMsg = `Umefika kikomo cha juu cha maswali ya leo (${tierLimits.dailyTurns}/${tierLimits.dailyTurns} turns). 🌟 You've completed an extraordinary amount of thinking today! Let your mind rest and process what you've learned. Your turns will reset at midnight. 🌳`;
         }
@@ -1603,7 +1613,7 @@ app.post('/api/chat', async (req, res) => {
       reply = await callLLM(activeMessages, staticPrompt, dynamicPrompt, { maxTokens, pii: piiKnown });
     } catch (llmErr) {
       if (isTestEnv(req)) {
-        reply = "Spot on! 🌟 That's a wonderful question to explore. Before we jump straight to the final answer, what do you already know about this topic, and how might we break it into two smaller steps? 🤔";
+        reply = "Good question to ask. Before we go to the answer, what do you already know about this topic? Can we break it into two smaller steps? 🤔";
       } else {
         throw llmErr;
       }
@@ -2848,6 +2858,44 @@ app.post('/api/gamification/league', (req, res) => {
   if (!student) return;
   gamification.setLeagueOptIn(student, !!(req.body || {}).optIn);
   res.json({ success: true, ...gamification.league(student, student.schoolId ? (studentStore.getStudentsBySchool(student.schoolId) || []) : []) });
+});
+
+// On-demand "Explain in Kiswahili" for ONE tutor message. Nothing is stored or cached; the English text is never replaced.
+const explainSwLimiter = makeLimiter(20, 'Too many requests. Please wait a moment and try again.');
+app.post('/api/tutor/explain-sw', explainSwLimiter, async (req, res) => {
+  try {
+    const { studentId, text } = req.body || {};
+    const student = requireStudent(req, res, studentId || null);
+    if (!student) return;
+    if (typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ success: false, error: 'Please send the tutor message to explain.' });
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({ success: false, error: 'That message is too long to explain (2000 characters at most).' });
+    }
+    const swGlossary = require('./kiswahiliGlossary');
+    const known = piiGuard.knownFor(student);
+    const cleanText = piiGuard.redact(text.trim(), known);
+    let out = null;
+    try {
+      out = await callLLM(
+        [{ role: 'user', content: cleanText }],
+        swGlossary.buildTranslatorPrompt(student.grade),
+        '',
+        { maxTokens: 1200, pii: known }
+      );
+    } catch (llmErr) {
+      console.warn('explain-sw LLM call failed:', llmErr.message);
+      out = null;
+    }
+    // callLLM substitutes a stock English line when the model returns nothing; never show that as a translation.
+    if (!out || typeof out !== 'string' || !out.trim() || /^Good observation! Let's keep going/.test(out.trim())) {
+      return res.status(503).json({ success: false, error: 'Kiswahili help is not available right now. The English explanation above still works. Please try again in a moment.' });
+    }
+    res.json({ success: true, text: out.trim() });
+  } catch (err) {
+    res.status(503).json({ success: false, error: 'Kiswahili help is not available right now. Please try again in a moment.' });
+  }
 });
 
 // Verify 4-digit PIN for profile switching
@@ -6194,7 +6242,7 @@ app.get('/parent/portal', (req, res) => {
                       <h3 style="font-size: 15.5px; font-weight: 700; color: #0D3A26;">Institutional Bulk Licences (Schools &amp; Counties)</h3>
                     </div>
                     <p style="font-size: 13px; color: #4A4A4A; line-height: 1.5; margin-bottom: 14px;">
-                      B2B deployment for CBE primary &amp; junior secondary schools, British &amp; International IGCSE schools, and county education boards with dedicated Teacher &amp; Headteacher SBA dashboards.
+                      B2B deployment for CBE primary &amp; junior secondary schools, Cambridge IGCSE &amp; international schools, and county education boards with dedicated Teacher &amp; Headteacher SBA dashboards.
                     </p>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: #0D3A26; font-weight: 600; margin-bottom: 16px;">
                       <span style="background: #E8F5ED; border: 1px solid #C8E0D0; padding: 4px 9px; border-radius: 6px;">🏫 CBE School: KES 500/mo</span>
@@ -6321,7 +6369,7 @@ app.get('/parent/portal', (req, res) => {
                 <div style="font-size: 12px; color: #64748B; margin-bottom: 8px;">Annual billing: KES 5,000 / pupil / yr (save KES 1,000/yr)</div>
                 <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #334155; line-height: 1.6;">
                   <li>Full Teacher and Headteacher CBE Analytics Dashboard</li>
-                  <li>Class-level Strand Mastery &amp; Misconception Heatmaps</li>
+                  <li>Class-level Strand (CBC) / Topic (Cambridge) Mastery &amp; Misconception Heatmaps</li>
                   <li>KICD SBA (School-Based Assessment) Report Generator</li>
                   <li>300 turns/day per pupil across all CBE subjects</li>
                 </ul>
@@ -7540,7 +7588,7 @@ app.get('/parent/portal', (req, res) => {
                     // 1. COMPACT SESSION ROWS (Quick glance with Premium 'Know More' deep dive)
                     html += recentTopics.map(function(t, sIdx) {
                       let subjIcon = "📖";
-                      let strandName = "Strand: General Concept";
+                      let strandName = (c.curriculum === 'BRITISH' || c.curriculum === 'IGCSE') ? "Topic: General Concept" : "Strand: General Concept";
                       let plainConcept = "Applying critical inquiry to local Kenyan community environments, resource management, and practical problem solving.";
                       let kenyanContext = "Caring for kitchen gardens, water conservation during dry seasons, and poultry keeping in the compound.";
                       let thinkingTrait = "Thoughtful reasoning &bull; responds well to Socratic prompts and self-corrects without needing answers revealed.";
@@ -7755,7 +7803,7 @@ app.get('/parent/portal', (req, res) => {
                       let isPrimary = (idx === primaryIdx);
                       let displayStyle = isPrimary ? 'block' : 'none';
 
-                      let strandName = "Strand: General Concept";
+                      let strandName = (c.curriculum === 'BRITISH' || c.curriculum === 'IGCSE') ? "Topic: General Concept" : "Strand: General Concept";
                       let plainConcept = "Applying critical inquiry to local Kenyan community environments, resource management, and practical problem solving.";
                       let kenyanContext = "Like caring for sukuma wiki kitchen gardens, water conservation during dry seasons, and poultry keeping in the compound.";
                       let effortPraise = "&ldquo;I noticed the effort and persistence you put into thinking through that problem today. Keep backing yourself!&rdquo;";
@@ -7933,7 +7981,7 @@ app.get('/parent/portal', (req, res) => {
                         const tierSfxNote = yrNote >= 10 ? (c.examTier === 'core' ? 'C' : 'E') : '';
                         const currDisplay = isBriNote ? ('Year ' + yrNote + tierSfxNote + ' curriculum') : ('Grade ' + c.grade + ' CBE curriculum');
                         cardHtml += '<div style="background: #FAF7F2; border: 1px solid #E0D8CC; border-radius: 8px; padding: 12px 14px; font-size: 12.5px; color: #4A4A4A; line-height: 1.5;">' +
-                          '<div>' + c.handle + ' completed <strong>' + turnsWord + '</strong> under <strong>' + strandName + '</strong> on ' + currDisplay + '.</div>' +
+                          '<div>' + c.handle + ' completed <strong>' + turnsWord + '</strong> under <strong>' + (isBriNote ? strandName.replace(/^Strand:/, 'Topic:') : strandName) + '</strong> on ' + currDisplay + '.</div>' +
                           '<div style="margin-top: 8px; font-size: 12px; color: #0D3A26; line-height: 1.4;">Upgrade to <strong>' + stdPriceLabel + '</strong> to unlock Tonight&#39;s Effort Praise words, Plain-Language Concept breakdowns, and Dinner-Table conversation starters.</div>' +
                           '<div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center;">' +
                             '<span style="font-size: 11px; color: #64748B;">No credit card required • Cancel anytime</span>' +
@@ -8183,7 +8231,7 @@ app.get('/parent/portal', (req, res) => {
             '<span style="font-size: 12px; font-weight: 700; color: #475569; margin-right: 4px;">Curriculum Tabs:</span>' +
             '<button type="button" class="portal-learner-tab active" id="tabLearnersAll" data-cur="ALL" onclick="filterLearnersByCurriculum(this.dataset.cur)" style="background: #0D3A26; color: #FFFFFF; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🌿 All Learners (' + children.length + ')</button>' +
             '<button type="button" class="portal-learner-tab" id="tabLearnersCbc" data-cur="CBC" onclick="filterLearnersByCurriculum(this.dataset.cur)" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🇰🇪 CBC / CBE (' + cbcChildren.length + ')</button>' +
-            '<button type="button" class="portal-learner-tab" id="tabLearnersBri" data-cur="BRITISH" onclick="filterLearnersByCurriculum(this.dataset.cur)" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🇬🇧 British / IGCSE (' + briChildren.length + ')</button>' +
+            '<button type="button" class="portal-learner-tab" id="tabLearnersBri" data-cur="BRITISH" onclick="filterLearnersByCurriculum(this.dataset.cur)" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">🇬🇧 Cambridge (' + briChildren.length + ')</button>' +
           '</div>';
 
           let html = '<div class="portal-card" style="padding: 22px 24px; margin-bottom: 20px; border: 1.5px solid #E0D8CC; background: #FFFFFF; border-radius: 14px; box-shadow: 0 3px 14px rgba(0,0,0,0.03);">' +
@@ -8652,7 +8700,7 @@ app.get('/parent/portal', (req, res) => {
           if (subEl) {
             if (isBri) {
               const yr = c.yearGroup || c.grade || 10;
-              subEl.textContent = 'British Curriculum • Year ' + yr + ' (' + (yr >= 10 ? (c.examTier === 'core' ? 'Core Tier' : 'Extended Tier') : 'Checkpoint') + ')';
+              subEl.textContent = (yr >= 10 ? 'Cambridge IGCSE' : 'Cambridge Lower Secondary') + ' • Year ' + yr + ' (' + (yr >= 10 ? (c.examTier === 'core' ? 'Core Tier' : 'Extended Tier') : 'Checkpoint') + ')';
             } else if (isSenior) {
               subEl.textContent = 'CBC Senior School • Grade ' + c.grade + ' (' + (c.pathway || 'STEM Pathway') + ')';
             } else {
@@ -8767,9 +8815,9 @@ app.get('/parent/portal', (req, res) => {
           let opts = '';
           if (hasBri && hasCbe) {
             opts += '<option value="all_cbe">👨‍👩‍👧‍👦 CBC Family Pack (KES 2,499/mo • Up to 3 CBC Learners on Premium)</option>';
-            opts += '<option value="all_igcse">🇬🇧 British / IGCSE Family Pack (KES 7,999/mo • Up to 3 British Learners on Premium)</option>';
+            opts += '<option value="all_igcse">🇬🇧 Cambridge Family Pack (KES 7,999/mo • Up to 3 Cambridge Learners on Premium)</option>';
           } else if (hasBri) {
-            opts += '<option value="all_igcse">🇬🇧 British / IGCSE Family Pack (KES 7,999/mo • Up to 3 British Learners on Premium)</option>';
+            opts += '<option value="all_igcse">🇬🇧 Cambridge Family Pack (KES 7,999/mo • Up to 3 Cambridge Learners on Premium)</option>';
           } else {
             opts += '<option value="all_cbe">👨‍👩‍👧‍👦 CBC Family Pack (KES 2,499/mo • Up to 3 CBC Learners on Premium)</option>';
           }
@@ -8854,7 +8902,7 @@ app.get('/parent/portal', (req, res) => {
 
           let tierName;
           if (isFamIgcse) {
-            tierName = 'British / IGCSE Family Pack ✨';
+            tierName = 'Cambridge Family Pack ✨';
             checkoutAmount = isAnnual ? 79999 : 7999;
           } else if (isFamCbe) {
             tierName = 'CBC Family Pack ✨';
@@ -8872,14 +8920,14 @@ app.get('/parent/portal', (req, res) => {
 
           if (checkoutStudentName) {
             const scopeDetail = isBri
-              ? ' (British / IGCSE Year ' + (targetChild.yearGroup || targetChild.grade) + ')'
+              ? ' (Cambridge IGCSE Year ' + (targetChild.yearGroup || targetChild.grade) + ')'
               : (isSenior ? ' (Senior School Grades 10–12)' : ' (Junior Secondary)');
             document.getElementById('checkoutModalTitle').textContent = 'Upgrade ' + checkoutStudentName + ': ' + tierName;
             document.getElementById('checkoutModalScope').textContent = 'Applies specifically to ' + checkoutStudentName + scopeDetail;
           } else {
-            const famLabel = isFamIgcse ? '🇬🇧 British / IGCSE Family Pack: ' : '🇰🇪 CBC Family Pack: ';
+            const famLabel = isFamIgcse ? '🇬🇧 Cambridge Family Pack: ' : '🇰🇪 CBC Family Pack: ';
             document.getElementById('checkoutModalTitle').textContent = famLabel + (isAnnual ? 'Annual (Save 2 Mos)' : 'Monthly');
-            document.getElementById('checkoutModalScope').textContent = 'Covers up to 3 linked ' + (isFamIgcse ? 'British / IGCSE' : 'Kenyan CBC') + ' learners on full Premium (Strictly Curriculum-Locked)';
+            document.getElementById('checkoutModalScope').textContent = 'Covers up to 3 linked ' + (isFamIgcse ? 'Cambridge' : 'Kenyan CBC') + ' learners on full Premium (Strictly Curriculum-Locked)';
           }
 
           document.getElementById('checkoutModalPrice').textContent = 'Total: KES ' + checkoutAmount.toLocaleString() + ' / ' + (isAnnual ? 'year' : 'month');
@@ -9435,7 +9483,7 @@ app.get('/parent/portal', (req, res) => {
         const JSS_SUBJECTS = ['Mathematics', 'English', 'Kiswahili', 'Science & Technology', 'Social Studies'];
         const SS_COMPULSORY = ['Core Mathematics', 'Essential Mathematics', 'Community Service Learning', 'English', 'Kiswahili'];
         const SS_PATHWAYS = {
-          STEM: ['Physics', 'Chemistry', 'Biology', 'Computer Studies'],
+          STEM: ['Physics', 'Chemistry', 'Biology', 'General Science', 'Computer Studies'],
           HUMANITIES: [],
           ARTS_SPORTS: []
         };
@@ -10391,7 +10439,7 @@ app.post('/api/parent/update-child-subjects', async (req, res) => {
     const isBri = studentStore.isBritishCurriculum(student);
     const isSenior = (student.grade >= 10);
     const ACTIVE_JSS_SUBJECTS = ['Mathematics', 'English', 'Kiswahili', 'Science & Technology', 'Social Studies'];
-    const ACTIVE_SS_SUBJECTS = ['Core Mathematics', 'Essential Mathematics', 'Community Service Learning', 'English', 'Kiswahili', 'Physics', 'Chemistry', 'Biology', 'Computer Studies'];
+    const ACTIVE_SS_SUBJECTS = ['Core Mathematics', 'Essential Mathematics', 'Community Service Learning', 'English', 'Kiswahili', 'Physics', 'Chemistry', 'Biology', 'General Science', 'Computer Studies'];
     const ACTIVE_BRI_IGCSE = [
       'Mathematics (0580)', 'First Language English (0500)', 'English as a Second Language (0510)', 'Physics (0625)', 'Chemistry (0620)', 'Biology (0610)', 'Computer Science (0478)', 'Business Studies (0450)', 'Economics (0455)', 'Geography (0460)', 'History (0470)',
       'Mathematics A (4MA1)', 'English Language A (4EA1)', 'Physics (4PH1)', 'Chemistry (4CH1)', 'Biology (4BI1)', 'Human Biology (4HB1)', 'Computer Science (4CP0)', 'Business (4BS1)', 'Economics (4EC1)', 'Geography (4GE1)', 'History (4HI1)'
@@ -11898,7 +11946,8 @@ app.get('/api/curriculum/subtopic/:id', async (req, res) => {
     if (!subtopicData) {
       return res.status(404).json({ success: false, error: 'Subtopic not found' });
     }
-    return res.json({ success: true, ...subtopicData });
+    // `ladder` is additive and read-only: check questions only, answers stay on the server.
+    return res.json({ success: true, ...primerLadder.applyLadders(subtopicData) });
   } catch (err) {
     console.error('Error fetching subtopic:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve subtopic' });
@@ -11927,6 +11976,8 @@ app.post('/api/curriculum/socratic-reason', async (req, res) => {
     const isIdk = /^(idk|i dont know|i do not know|dont know|not sure|no idea|i have no idea|help|confused|sijui|siezi)$/i.test(lower);
     const isGibberish = (/^[a-z]{6,}$/i.test(cleanInput) && !/[aeiouy]{1,}/i.test(cleanInput)) || /^([a-z0-9])\1{4,}$/i.test(cleanInput) || (cleanInput.length > 8 && (cleanInput.match(/[qwzxkj]/gi) || []).length > cleanInput.length * 0.4);
 
+    const ladderBlock = primerLadder.buildLadderPromptBlock(primerLadder.getLadder(subtopicId));
+
     // Specialized Socratic prompt following Option 1.A (Scaffolded Stepping Stone)
     const socraticPrompt = `You are Elingu — a warm, inspiring Kenyan Socratic tutor for school children.
 You are tutoring a Grade ${grade} student in ${subject} (${curriculum}).
@@ -11937,23 +11988,23 @@ THE TOPIC:
 - Key Rule/Formula: "${formula}"
 - Real-World Analogy: "${primer.realWorldContext || ''}"
 - Guided Inquiry Question: "${targetQuestion}"
-
+${ladderBlock ? '\n' + ladderBlock + '\n' : ''}
 STUDENT INPUT:
 "${cleanInput}"
 
 RULES FOR YOUR SOCRATIC RESPONSE:
 1. NEVER use fake praise like "Brilliant reflection!" when the child is confused, stuck, or typed gibberish.
 2. If the student says "I don't know" or seems stuck:
-   - Validate them with warmth: learning something new takes courage!
+   - Validate them with warmth: it is fine not to know yet.
    - Offer ONE concrete, everyday physical stepping stone (use a visual analogy like Mama Mboga's market bags, an elevator, or Lake Victoria diver).
    - Ask an easier, 1-step guiding question to help them take the first step.
 3. If the student typed nonsense or keyboard mash:
-   - Reply lightheartedly: "Looks like your fingers took a quick sprint on the keyboard! 😊"
+   - Reply calmly: "I could not read that one. Try again in your own words, or tell me which part is unclear."
    - Re-orient them gently to the concept with a simple, friendly question.
 4. If the student attempted an answer:
    - Highlight what makes sense in their thinking.
    - If incorrect, guide them back to where it doesn't match using the analogy, without judging.
-   - If correct, celebrate their reasoning specifically, explain why it works, and invite them forward.
+   - If correct, state which part of their reasoning is sound and why (no stock praise), then invite the next step.
 5. Length: 2 to 4 friendly sentences maximum.
 6. MASTERY STATUS: At the very end of your response on a separate line, output either:
    [STATUS: MASTERED] - ONLY if the student explained the concept correctly or gave a sound reason.
@@ -11981,9 +12032,9 @@ RULES FOR YOUR SOCRATIC RESPONSE:
       if (isIdk) {
         reply = `That is completely okay! 🌱 Learning something new always starts with curiosity. Let's make it super simple: look at the real-world example above. What happens when two opposite signs meet?`;
       } else if (isGibberish) {
-        reply = `Looks like your fingers took a quick sprint across the keyboard! 😊 Let's look at "${targetQuestion}" together — what is your first hunch?`;
+        reply = `I could not read that one. Let's look at "${targetQuestion}" together — what is your first hunch?`;
       } else {
-        reply = `Interesting thought! 🤔 Notice how each step connects back to ${formula || 'our core rule'}. How does that help us solve "${targetQuestion}"?`;
+        reply = `Let us test that idea. Notice how each step connects back to ${formula || 'our core rule'}. How does that help us solve "${targetQuestion}"?`;
       }
     }
 
@@ -11994,7 +12045,8 @@ RULES FOR YOUR SOCRATIC RESPONSE:
         isMastered = statusMatch[1].toUpperCase() === 'MASTERED';
         reply = reply.replace(/\[STATUS:\s*(MASTERED|EXPLORING)\]/i, '').trim();
       } else {
-        isMastered = !isIdk && !isGibberish && cleanInput.length > 5 && /(unlocked|spot on|perfect reasoning|you got it right|well done reasoning)/i.test(reply);
+        // Mastery only comes from the explicit [STATUS: MASTERED] tag; never inferred from praise words.
+        isMastered = false;
       }
     }
     if (isIdk || isGibberish) {

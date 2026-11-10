@@ -12,6 +12,8 @@
   var state = { step: 'curriculum', curriculum: null, grade: null, subject: null, catalogue: null, map: null };
   var root = null;
 
+  // Icon helper: window.ico is loaded with defer, so call it at render time and tolerate it being absent.
+  function ic(name, cls) { return window.ico ? window.ico(name, cls) : ''; }
   function esc(v) {
     return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -56,8 +58,8 @@
       '<h1 class="xp-title">What do you study?</h1>' +
       '<p class="xp-sub">Pick one to see your topics. No sign-up needed.</p>' +
       '<div class="xp-cards two">' +
-        '<button class="xp-card" data-curr="CBC"><span class="big" aria-hidden="true">🇰🇪</span><span><strong>Kenyan CBC</strong><small>Grades 6 to 12, KICD curriculum</small></span></button>' +
-        '<button class="xp-card" data-curr="BRITISH"><span class="big" aria-hidden="true">🇬🇧</span><span><strong>Cambridge IGCSE</strong><small>Checkpoint and IGCSE, Years 7 to 11</small></span></button>' +
+        '<button class="xp-card" data-curr="CBC"><span class="big chip" aria-hidden="true">CBC</span><span><strong>Kenyan CBC</strong><small>Grades 6 to 12, KICD curriculum</small></span></button>' +
+        '<button class="xp-card" data-curr="BRITISH"><span class="big chip" aria-hidden="true">IGCSE</span><span><strong>Cambridge IGCSE</strong><small>Checkpoint and IGCSE, Years 7 to 11</small></span></button>' +
       '</div>', false);
   }
 
@@ -124,9 +126,9 @@
       }
       html += '<h2 style="font-size:18px;margin:6px 0 10px;color:#0D3A26">Your roadmap</h2>';
       html += map.stations.map(function (st) {
-        return '<div class="xp-station"><h4>' + esc(st.icon || '') + ' ' + esc(st.title) + '</h4>' +
+        return '<div class="xp-station"><h4>' + esc(st.title) + '</h4>' +
           (st.subtopics || []).map(function (sub) {
-            return '<button class="xp-stop" data-stop="' + esc(sub.id) + '"><span aria-hidden="true">🔒</span><span>' + esc(sub.title) + '</span></button>';
+            return '<button class="xp-stop" data-stop="' + esc(sub.id) + '"><span aria-hidden="true">' + ic('lock') + '</span><span>' + esc(sub.title) + '</span></button>';
           }).join('') + '</div>';
       }).join('');
       list.className = '';
@@ -181,7 +183,7 @@
     root.setAttribute('aria-label', 'Explore Elingu');
     root.hidden = true;
     root.innerHTML =
-      '<div class="xp-bar"><span class="xp-brand">🌳 Elingu</span>' +
+      '<div class="xp-bar"><span class="xp-brand"><img src="/elingu-avatar.webp" alt="" width="24" height="24" decoding="async"> Elingu</span>' +
       (window.ElinguI18n ? window.ElinguI18n.switcher() : '') +
       '<button class="xp-login" data-act="login" type="button">I have an account</button></div>' +
       '<div class="xp-wrap" id="xpMain" aria-live="polite"></div>' +
@@ -250,11 +252,11 @@
   function tasteHome() {
     var s = taste.student, links = tasteShareLinks(s);
     var open = taste.subjects.map(function (name) {
-      return '<button class="xp-card" data-tsub="' + esc(name) + '"><span class="big" aria-hidden="true">📖</span><span><strong>' + esc(name) + '</strong><small>Read the roadmap and lessons</small></span></button>';
+      return '<button class="xp-card" data-tsub="' + esc(name) + '"><span class="big" aria-hidden="true">' + ic('book-open') + '</span><span><strong>' + esc(name) + '</strong><small>Read the roadmap and lessons</small></span></button>';
     }).join('');
-    var locks = ['Ask the tutor', 'Practice papers', 'Save my progress and XP', 'All other subjects'].map(function (t) { return '<li><span aria-hidden="true">🔒</span> ' + esc(t) + '</li>'; }).join('');
+    var locks = ['Ask the tutor', 'Practice papers', 'Save my progress and XP', 'All other subjects'].map(function (t) { return '<li><span aria-hidden="true">' + ic('lock') + '</span> ' + esc(t) + '</li>'; }).join('');
     render(
-      '<div class="xp-taste-banner" role="status"><span aria-hidden="true">⏳</span> <span>Waiting for your parent to say yes</span></div>' +
+      '<div class="xp-taste-banner" role="status"><span aria-hidden="true">' + ic('hourglass') + '</span> <span>Waiting for your parent to say yes</span></div>' +
       '<p class="xp-sub">Hi ' + esc(s.handle) + '! Your parent or guardian has been sent a message. Remind them, and look around while you wait.</p>' +
       '<div class="xp-share">' +
         '<a class="xp-share-btn" href="' + esc(links.wa) + '" target="_blank" rel="noopener">Send my parent the link on WhatsApp</a>' +
@@ -278,8 +280,8 @@
       if (!map || !map.stations || !map.stations.length) { list.innerHTML = '<p class="xp-note">We are still building this subject.</p>'; return; }
       list.className = '';
       list.innerHTML = map.stations.map(function (st) {
-        return '<div class="xp-station"><h4>' + esc(st.icon || '') + ' ' + esc(st.title) + '</h4>' + (st.subtopics || []).map(function (sub) {
-          return '<button class="xp-stop" data-tstop="' + esc(sub.id) + '"><span aria-hidden="true">📖</span><span>' + esc(sub.title) + '</span></button>';
+        return '<div class="xp-station"><h4>' + esc(st.title) + '</h4>' + (st.subtopics || []).map(function (sub) {
+          return '<button class="xp-stop" data-tstop="' + esc(sub.id) + '"><span aria-hidden="true">' + ic('book-open') + '</span><span>' + esc(sub.title) + '</span></button>';
         }).join('') + '</div>';
       }).join('');
     }).catch(function () { var l = root.querySelector('#xpList'); if (l) l.innerHTML = '<p class="xp-note">You seem to be offline. Connect and try again.</p>'; });

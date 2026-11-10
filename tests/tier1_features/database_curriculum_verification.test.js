@@ -180,7 +180,7 @@ module.exports = {
     // 3. Year 10 Chemistry Mole Concept
     const chem10 = await ctx.api('/api/curriculum/map?curriculum=BRITISH&grade=10&subject=Chemistry');
     assert.strictEqual(chem10.status, 200);
-    const mole = chem10.data.map.stations[0].subtopics.find(st => st.id === 'cie_y10_chem_s1_1');
+    const mole = chem10.data.map.stations.flatMap(s => s.subtopics).find(st => st.id === 'cie_y10_chem_s1_1');   // the map now follows Cambridge's topic order, so the lesson (same id) is not necessarily in the first station
     assert.ok(mole, 'Must contain mole concept subtopic cie_y10_chem_s1_1');
 
     // 4. Year 10 Mathematics 0580 Surds & Quadratics

@@ -114,7 +114,7 @@
         '<div style="flex:1;min-width:200px"><h3 style="margin:0 0 4px">Today\'s goal</h3><div class="play-mute">' + (s.dailyGoal.met ? 'Goal reached! Everything now is a bonus. 🎉' : 'Do a Brain Spark, a practice paper or explain a concept to fill your ring.') + '</div>' +
         '<div class="play-mute" style="margin-top:6px">Just trying counts too: up to ' + esc(s.effortToday.cap) + ' XP a day (used ' + esc(s.effortToday.used) + ').</div></div></div>';
       h += '<div class="play-card play-row"><div style="font-size:40px" aria-hidden="true">🔥</div><div style="flex:1;min-width:200px"><h3 style="margin:0">' + esc(s.streak) + '-day streak</h3>' +
-        '<div class="play-mute">❄️ Streak freezes: <b>' + esc(s.freezes) + '</b>. A freeze forgives one missed day. You earn one every 7 days in a row (keep up to 2).</div></div></div>';
+        '<div class="play-mute">' + (window.ico ? window.ico('snowflake', 'i-sm') : '') + ' Streak freezes: <b>' + esc(s.freezes) + '</b>. A freeze forgives one missed day. You earn one every 7 days in a row (keep up to 2).</div></div></div>';
       h += '<div class="play-card"><h3>Badges</h3><div class="play-badges">' + s.badges.map(function (b) {
         return '<div class="play-badge' + (b.earned ? '' : ' locked') + '" title="' + esc(b.how) + '"><span class="i" aria-hidden="true">' + esc(b.icon) + '</span><b>' + esc(b.name) + '</b><small>' + (b.earned ? 'Earned' : esc(b.how)) + '</small></div>';
       }).join('') + '</div></div>';
@@ -164,7 +164,7 @@
   function draw(el, d) {
     var answeredN = Object.keys(d.answered).length;
     var dots = '<div class="spark-dots" aria-hidden="true">' + d.questions.map(function (q) { var a = d.answered[q.index]; return '<i class="' + (a ? (a.correct ? 'ok' : 'no') : '') + '"></i>'; }).join('') + '</div>';
-    var head = '<div class="play-card spark"><div class="play-row" style="justify-content:space-between"><h3 style="margin:0">⚡ Brain Spark</h3><span class="play-mute">3 quick questions · ' + esc(answeredN) + '/' + esc(d.total) + '</span></div>' + dots;
+    var head = '<div class="play-card spark"><div class="play-row" style="justify-content:space-between"><h3 style="margin:0">' + (window.ico ? window.ico('zap') + ' ' : '') + 'Brain Spark</h3><span class="play-mute">3 quick questions · ' + esc(answeredN) + '/' + esc(d.total) + '</span></div>' + dots;
     if (d.complete) {
       el.innerHTML = head + '<p style="margin:6px 0"><b>' + esc(d.right) + ' of ' + esc(d.total) + ' correct today.</b> ' + (d.right === d.total ? 'Perfect! 🎉' : 'Nice effort: come back tomorrow for three new ones.') + '</p></div>';
       return;
@@ -303,30 +303,40 @@
     renderSetup();
   }
 
-  // ── My Subjects dropdown under Brain Deck (remembers whether it was open) ──
+  // ── Brain Deck group: Brain Deck opens or closes the whole group (My Subjects + My Spaces); My Subjects opens or closes its own list.
+  //    Both start closed and are remembered. ──
   var Sidebar = (function () {
-    var KEY = 'elingu_subjects_open';
+    var DECK_KEY = 'elingu_deck_open', SUBJ_KEY = 'elingu_subjects_open';
     function nav() { return document.querySelector('.sidebar-nav'); }
-    function isOpen() { var n = nav(); return !!n && !n.classList.contains('subjects-collapsed'); }
-    function apply(open, remember) {
+    function deckOpen() { var n = nav(); return !!n && !n.classList.contains('deck-collapsed'); }
+    function subjectsOpen() { var n = nav(); return !!n && !n.classList.contains('subjects-collapsed'); }
+    function remember(k, v) { try { localStorage.setItem(k, v ? '1' : '0'); } catch (e) {} }
+    function applyDeck(open, save) {
+      var n = nav(); if (!n) return;
+      n.classList.toggle('deck-collapsed', !open);
+      var b = document.getElementById('deckChevron'); if (b) b.setAttribute('aria-expanded', String(open));
+      if (save) remember(DECK_KEY, open);
+    }
+    function applySubjects(open, save) {
       var n = nav(); if (!n) return;
       n.classList.toggle('subjects-collapsed', !open);
-      var b = document.getElementById('deckChevron'); if (b) b.setAttribute('aria-expanded', String(open));
       var t = document.getElementById('sidebarSubjectsTitle'); if (t) t.setAttribute('aria-expanded', String(open));
-      if (remember) { try { localStorage.setItem(KEY, open ? '1' : '0'); } catch (e) {} }
+      if (save) remember(SUBJ_KEY, open);
     }
     function init() {
-      var saved = null; try { saved = localStorage.getItem(KEY); } catch (e) {}
-      apply(saved !== '0', false);
+      var d = null, s = null; try { d = localStorage.getItem(DECK_KEY); s = localStorage.getItem(SUBJ_KEY); } catch (e) {}
+      applyDeck(d === '1', false);
+      applySubjects(s === '1', false);
       var chev = document.getElementById('deckChevron');
-      if (chev) chev.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); apply(!isOpen(), true); });
+      if (chev) chev.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); applyDeck(!deckOpen(), true); });
       var title = document.getElementById('sidebarSubjectsTitle');
       if (title) {
-        title.addEventListener('click', function () { apply(!isOpen(), true); });
-        title.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply(!isOpen(), true); } });
+        title.addEventListener('click', function () { applySubjects(!subjectsOpen(), true); });
+        title.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); applySubjects(!subjectsOpen(), true); } });
       }
     }
-    return { init: init, openSubjects: function () { apply(true, true); }, isOpen: isOpen };
+    // choosing Brain Deck itself opens its group, with the subject list still closed until they ask for it
+    return { init: init, openSubjects: function () { applyDeck(true, true); }, isOpen: deckOpen };
   })();
   window.ElinguSidebar = Sidebar;
 

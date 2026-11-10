@@ -127,6 +127,13 @@ async function seed() {
     }
   }
 
+  // Topics the owner has removed from a grade (they do not match the KICD / Cambridge design) are RETIRED, never deleted:
+  // they disappear from the roadmap but any saved space or progress that points at them keeps working.
+  const { RETIRED_SUBTOPIC_IDS } = require('./seeds');
+  for (const retiredId of (RETIRED_SUBTOPIC_IDS || [])) {
+    await db.query("UPDATE sub_strands SET status = 'retired' WHERE id = $1", [retiredId]);
+  }
+
   console.log(`✅ Seeded ${seededSubjects} Subjects, ${seededStrands} Learning Strands/Topics, and ${seededStops} Sub-Strands/Stops.`);
 
   // 5. Seed Assessment Papers & Questions from examRevisionService

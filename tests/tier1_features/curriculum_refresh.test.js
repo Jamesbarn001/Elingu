@@ -58,7 +58,7 @@ module.exports = {
     const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
     const play = fs.readFileSync(path.join(root, 'public', 'play.js'), 'utf8');
     ctx.assert(/id="deckChevron"[^>]*aria-expanded/.test(html), 'a chevron button next to Brain Deck');
-    ctx.assert(/subjects-collapsed \.nav-item\[data-subject\][\s\S]{0,400}position: absolute !important/.test(html), 'closing takes the rows out of the layout (inline display rules cannot override it)');
+    ctx.assert(/subjects-collapsed \.nav-item\[data-subject\][\s\S]{0,900}position: absolute !important/.test(html), 'closing takes the rows out of the layout (inline display rules cannot override it)');
     ctx.assert(/id="sidebarSubjectsTitle" role="button" tabindex="0"/.test(html), 'the My Subjects title is a keyboard-reachable button');
     ctx.assert(/ElinguSidebar\.openSubjects\(\)/.test(html), 'choosing Brain Deck opens the list');
     ctx.assert(/elingu_subjects_open/.test(play) && /setAttribute\('aria-expanded'/.test(play), 'remembers the choice and tells screen readers');
